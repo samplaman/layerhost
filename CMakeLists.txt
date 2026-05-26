@@ -57,6 +57,7 @@ target_link_libraries(layerhost PRIVATE
 )
 
 target_include_directories(layerhost PRIVATE
+    ${juce_SOURCE_DIR}/modules
     ${CMAKE_BINARY_DIR}/modules/juce_clap_hosting/clap/include
     ${CMAKE_BINARY_DIR}/modules/juce_clap_hosting/clap-helpers/include
 )
