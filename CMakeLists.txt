@@ -41,6 +41,7 @@ target_compile_definitions(layerhost PRIVATE
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_VST=0
     JUCE_PLUGINHOST_AU=0
+    JUCE_SILENCE_XCODE_15_LINKER_WARNING=1
 )
 
 target_link_libraries(layerhost PRIVATE
