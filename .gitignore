@@ -1,0 +1,26 @@
+# CMake build output directories
+/build/
+/cmake-build-debug/
+/cmake-build-release/
+/out/
+
+# Temporary CLAP directory
+/tmp_clap/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.user
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.vcxproj
+*.filters
+
+# Crash logs/core dumps
+crashdump.dmp
