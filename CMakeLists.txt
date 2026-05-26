@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.22)
 
 project(layerhost VERSION 1.0.0)
 
@@ -13,6 +13,7 @@ FetchContent_Declare(
     juce_clap_hosting
     GIT_REPOSITORY https://github.com/jatinchowdhury18/juce_clap_hosting.git
     GIT_TAG        main
+    GIT_SUBMODULES_RECURSE TRUE
     SOURCE_DIR     ${CMAKE_BINARY_DIR}/modules/juce_clap_hosting
 )
 FetchContent_MakeAvailable(juce_clap_hosting)
