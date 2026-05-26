@@ -357,7 +357,7 @@ juce::AudioProcessor* AudioEngine::loadPlugin (const juce::String& filePath, Tra
 std::unique_ptr<juce::XmlElement> AudioEngine::saveProjectToXml()
 {
     const juce::ScopedLock sl (engineLock);
-    auto root = std::make_unique<juce::XmlElement> ("VIBEDAW_PROJECT");
+    auto root = std::make_unique<juce::XmlElement> ("LAYERHOST_PROJECT");
     root->setAttribute ("bpm", bpm);
     root->setAttribute ("metronome", metronomeEnabled ? 1 : 0);
     root->setAttribute ("snap", (int)snapDivision);

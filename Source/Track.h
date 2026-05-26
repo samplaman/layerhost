@@ -958,7 +958,7 @@ public:
 
             itemToSave->setLength(juce::jmax(0.1, stopTime - itemToSave->getStartTime()));
             
-            juce::File dir = juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("VibeDAW_Recordings");
+            juce::File dir = juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("Layerhost_Recordings");
             dir.createDirectory();
             
             if (itemToSave->getType() == Item::Type::Audio && itemToSave->getBuffer().getNumSamples() > 0)
