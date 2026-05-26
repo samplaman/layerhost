@@ -24,7 +24,7 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact-name: layerhost-linux.tar.gz
-          - os: macos-latest
+          - os: macos-14
             artifact-name: layerhost-macos.zip
           - os: windows-latest
             artifact-name: layerhost-windows.zip
@@ -58,11 +58,11 @@ jobs:
 
       # Configure CMake
       - name: Configure CMake (macOS)
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-14'
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-DGL_SILENCE_DEPRECATION=1"
 
       - name: Configure CMake (non-macOS)
-        if: matrix.os != 'macos-latest'
+        if: matrix.os != 'macos-14'
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       # Build Project
@@ -84,7 +84,7 @@ jobs:
 
       # Package macOS Artifact
       - name: Package macOS
-        if: matrix.os == 'macos-latest'
+        if: matrix.os == 'macos-14'
         run: |
           if [ -d build/layerhost_artefacts/Release/layerhost.app ]; then
             cd build/layerhost_artefacts/Release && zip -r ../../../${{ matrix.artifact-name }} layerhost.app
