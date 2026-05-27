@@ -17,6 +17,7 @@ FetchContent_Declare(
     juce_clap_hosting
     GIT_REPOSITORY https://github.com/jatinchowdhury18/juce_clap_hosting.git
     GIT_TAG        main
+    PATCH_COMMAND  git apply ${CMAKE_SOURCE_DIR}/Source/stubs/0001-Fix-JUCE-8-API-changes.patch
     GIT_SUBMODULES_RECURSE TRUE
     SOURCE_DIR     ${CMAKE_BINARY_DIR}/modules/juce_clap_hosting
 )

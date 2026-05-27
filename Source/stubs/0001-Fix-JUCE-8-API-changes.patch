@@ -1,0 +1,54 @@
+From 526631c7f2e286f572e4f6489137605ae6bfaaef Mon Sep 17 00:00:00 2001
+From: lali <eoinodowd@outlook.com>
+Date: Wed, 27 May 2026 20:16:33 +0100
+Subject: [PATCH] Fix JUCE 8 API changes
+
+---
+ format_types/CLAPPluginFormat.cpp | 10 +++++++---
+ 1 file changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/format_types/CLAPPluginFormat.cpp b/format_types/CLAPPluginFormat.cpp
+index f675919..2391498 100644
+--- a/format_types/CLAPPluginFormat.cpp
++++ b/format_types/CLAPPluginFormat.cpp
+@@ -2,6 +2,10 @@
+ #include "juce_audio_plugin_client/AU/CoreAudioUtilityClasses/CAXException.h" // CFBundleRef (there should be a better way...)
+ #include "juce_core/native/juce_mac_CFHelpers.h" // CFUniquePtr
+ 
++#if JUCE_LINUX || JUCE_BSD
++#include <sys/utsname.h>
++#endif
++
+ #include <clap/clap.h>
+ #include <clap/helpers/event-list.hh>
+ #include <clap/helpers/reducing-param-queue.hh>
+@@ -174,7 +178,7 @@ namespace juce {
+ #elif JUCE_LINUX || JUCE_BSD
+             static constexpr const char* entryFnName = "clap_entry";
+ 
+-            using EntryProc = bool (PLUGIN_API*) (void*);
++            using EntryProc = bool (*) (void*);
+ #elif JUCE_MAC
+             static constexpr const char *entryFnName = "clap_entry";
+ 
+@@ -556,7 +560,7 @@ namespace juce {
+             clap_audio_buffer clapBuffer {};
+             clapBuffer.channel_count = (uint32_t) buffer.getNumChannels();
+             clapBuffer.constant_mask = 0;
+-            clapBuffer.data32 = buffer.getArrayOfWritePointers();
++            clapBuffer.data32 = const_cast<float**> (buffer.getArrayOfWritePointers());
+             clapBuffer.data64 = nullptr;
+             clapBuffer.latency = 0; // @TODO
+ 
+@@ -815,7 +819,7 @@ namespace juce {
+                 clap_window w;
+ #if JUCE_LINUX
+                 w.api = CLAP_WINDOW_API_X11;
+-                w.x11 = window.getWindowHandle();
++                w.x11 = (clap_xwnd) (uintptr_t) window.getWindowHandle();
+ #elif JUCE_MAC
+                 w.api = CLAP_WINDOW_API_COCOA;
+                 w.cocoa = reinterpret_cast<clap_nsview>(window.getWindowHandle());
+-- 
+2.43.0
+
