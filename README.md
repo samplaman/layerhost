@@ -2,7 +2,7 @@
 
 Layerhost is a modern, cross-platform Digital Audio Workstation (DAW) built with [JUCE 8](https://juce.com/). It features infinite track counts, a sleek mixer, a full-featured piano roll, and robust CLAP plugin hosting capabilities.
 
-![Layerhost Interface](screenshot.png)
+![Layerhost Interface](https://raw.githubusercontent.com/samplaman/layerhost/main/screenshot.png)
 
 ## Features
 
