@@ -1,14 +1,14 @@
-From 526631c7f2e286f572e4f6489137605ae6bfaaef Mon Sep 17 00:00:00 2001
+From 3fe739a8eea2bad4de6856d2d1547db6ae7fca32 Mon Sep 17 00:00:00 2001
 From: lali <eoinodowd@outlook.com>
 Date: Wed, 27 May 2026 20:16:33 +0100
 Subject: [PATCH] Fix JUCE 8 API changes
 
 ---
- format_types/CLAPPluginFormat.cpp | 10 +++++++---
- 1 file changed, 7 insertions(+), 3 deletions(-)
+ format_types/CLAPPluginFormat.cpp | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
 
 diff --git a/format_types/CLAPPluginFormat.cpp b/format_types/CLAPPluginFormat.cpp
-index f675919..2391498 100644
+index f675919..9d5867c 100644
 --- a/format_types/CLAPPluginFormat.cpp
 +++ b/format_types/CLAPPluginFormat.cpp
 @@ -2,6 +2,10 @@
@@ -22,7 +22,12 @@ index f675919..2391498 100644
  #include <clap/clap.h>
  #include <clap/helpers/event-list.hh>
  #include <clap/helpers/reducing-param-queue.hh>
-@@ -174,7 +178,7 @@ namespace juce {
+@@ -170,11 +174,11 @@ namespace juce {
+ #if JUCE_WINDOWS
+             static constexpr const char* entryFnName = "clap_entry";
+ 
+-            using EntryProc = bool (PLUGIN_API*) ();
++            using EntryProc = bool (*) (const char*);
  #elif JUCE_LINUX || JUCE_BSD
              static constexpr const char* entryFnName = "clap_entry";
  
