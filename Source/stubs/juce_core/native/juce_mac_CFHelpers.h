@@ -4,5 +4,5 @@
 #pragma once
 
 #if __APPLE__
-#include "juce_CFHelpers_mac.h"
+#include <juce_core/native/juce_CFHelpers_mac.h>
 #endif
