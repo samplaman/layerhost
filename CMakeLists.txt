@@ -61,11 +61,25 @@ target_link_libraries(layerhost PRIVATE
     juce_clap_hosting
 )
 
+FetchContent_Declare(
+    clap
+    GIT_REPOSITORY https://github.com/free-audio/clap.git
+    GIT_TAG        main
+)
+FetchContent_MakeAvailable(clap)
+
+FetchContent_Declare(
+    clap_helpers
+    GIT_REPOSITORY https://github.com/free-audio/clap-helpers.git
+    GIT_TAG        main
+)
+FetchContent_MakeAvailable(clap_helpers)
+
 target_include_directories(layerhost PRIVATE
     ${CMAKE_SOURCE_DIR}/Source/stubs
     ${juce_SOURCE_DIR}/modules
-    ${CMAKE_BINARY_DIR}/modules/juce_clap_hosting/clap/include
-    ${CMAKE_BINARY_DIR}/modules/juce_clap_hosting/clap-helpers/include
+    ${clap_SOURCE_DIR}/include
+    ${clap_helpers_SOURCE_DIR}/include
 )
 
 juce_generate_juce_header(layerhost)
