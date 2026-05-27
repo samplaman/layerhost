@@ -6,7 +6,7 @@ class LayerHostApplication  : public juce::JUCEApplication
 public:
     LayerHostApplication() {}
 
-    const juce::String getApplicationName() override       { return "Vibe DAW"; }
+    const juce::String getApplicationName() override       { return "Layerhost"; }
     const juce::String getApplicationVersion() override    { return ProjectInfo::versionString; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 

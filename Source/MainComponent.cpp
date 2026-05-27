@@ -750,7 +750,7 @@ MainComponent::MainComponent() : mixerResizer (*this)
     }
     else
     {
-        mixerWindow = std::make_unique<MixerWindow>("Vibe DAW Mixer", &mixerViewport, this);
+        mixerWindow = std::make_unique<MixerWindow>("Layerhost Mixer", &mixerViewport, this);
     }
 
     scanSystemPlugins();
@@ -1810,7 +1810,7 @@ void MainComponent::setMixerDocked (bool docked)
         
         if (isMixerVisible)
         {
-            mixerWindow = std::make_unique<MixerWindow>("Vibe DAW Mixer", &mixerViewport, this);
+            mixerWindow = std::make_unique<MixerWindow>("Layerhost Mixer", &mixerViewport, this);
             mixerWindow->setVisible (true);
         }
     }
@@ -1835,7 +1835,7 @@ void MainComponent::setMixerVisible (bool visible)
         if (isMixerVisible)
         {
             if (mixerWindow == nullptr)
-                mixerWindow = std::make_unique<MixerWindow>("Vibe DAW Mixer", &mixerViewport, this);
+                mixerWindow = std::make_unique<MixerWindow>("Layerhost Mixer", &mixerViewport, this);
             mixerWindow->setVisible (true);
         }
         else
