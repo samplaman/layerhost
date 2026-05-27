@@ -9,7 +9,7 @@ project(layerhost VERSION 1.0.0)
 include(FetchContent)
 FetchContent_Declare(
     juce
-    URL https://github.com/juce-framework/JUCE/archive/refs/tags/7.0.9.zip
+    URL https://github.com/juce-framework/JUCE/archive/refs/tags/8.0.0.zip
 )
 FetchContent_MakeAvailable(juce)
 
