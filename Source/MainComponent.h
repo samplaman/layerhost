@@ -223,6 +223,27 @@ public:
     TrackHeaderComponent (Track* t, AudioEngine& engine, std::function<void()> onRepaintNeeded)
         : track (t), audioEngine (engine), triggerRepaint(onRepaintNeeded)
     {
+        // Color Picker
+        addAndMakeVisible (colorBtn);
+        colorBtn.setColour (juce::TextButton::buttonColourId, track->getColor());
+        colorBtn.onClick = [this] {
+            juce::PopupMenu m;
+            m.addItem(1, "Red"); m.addItem(2, "Green"); m.addItem(3, "Blue"); m.addItem(4, "Yellow"); m.addItem(5, "Purple"); m.addItem(6, "Cyan"); m.addItem(7, "Orange");
+            m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&colorBtn), [this](int r) {
+                if (r == 1) track->setColor(juce::Colour(0xffe53935));
+                else if (r == 2) track->setColor(juce::Colour(0xff43a047));
+                else if (r == 3) track->setColor(juce::Colour(0xff1e88e5));
+                else if (r == 4) track->setColor(juce::Colour(0xfffdd835));
+                else if (r == 5) track->setColor(juce::Colour(0xff8e24aa));
+                else if (r == 6) track->setColor(juce::Colour(0xff00acc1));
+                else if (r == 7) track->setColor(juce::Colour(0xfffb8c00));
+                
+                colorBtn.setColour (juce::TextButton::buttonColourId, track->getColor());
+                updateStates();
+                if (triggerRepaint) triggerRepaint();
+            });
+        };
+
         // Name Label
         addAndMakeVisible (nameLabel);
         nameLabel.setText (track->getName(), juce::dontSendNotification);
@@ -389,7 +410,8 @@ public:
         auto r = getLocalBounds().reduced (5);
         
         auto topRow = r.removeFromTop (20);
-        nameLabel.setBounds (topRow.removeFromLeft (130));
+        colorBtn.setBounds (topRow.removeFromLeft (15).reduced (2));
+        nameLabel.setBounds (topRow.removeFromLeft (115));
         typeLabel.setBounds (topRow);
 
         if (getHeight() >= 65)
@@ -509,6 +531,7 @@ private:
     bool isResizing = false;
     int initialHeight = 80;
 
+    juce::TextButton colorBtn;
     juce::Label nameLabel;
     juce::Label typeLabel;
     juce::TextButton muteBtn { "M" };

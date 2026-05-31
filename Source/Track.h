@@ -192,7 +192,7 @@ public:
 class Track : public juce::AudioProcessor
 {
 public:
-    enum class Type { Audio, Midi };
+    enum class Type { Audio, Midi, Folder };
 
     Track (Type t = Type::Audio)
         : AudioProcessor (BusesProperties()
@@ -205,6 +205,10 @@ public:
             for (int i = 0; i < 8; ++i)
                 synth.addVoice (new SimpleSynthVoice());
             synth.addSound (new SimpleSynthSound());
+        }
+        else if (trackType == Type::Folder)
+        {
+            isFolderTrack = true;
         }
     }
 
@@ -737,6 +741,40 @@ public:
     
     void setHeight (int newHeight) { height = juce::jlimit (40, 100, newHeight); }
     int getHeight() const { return height; }
+
+    juce::Colour getColor() const { return trackColor; }
+    void setColor (juce::Colour c) { trackColor = c; }
+    
+    bool getIsFolderTrack() const { return isFolderTrack; }
+    void setIsFolderTrack (bool isFolder) { isFolderTrack = isFolder; }
+    
+    bool getIsFolderCollapsed() const { return isFolderCollapsed; }
+    void setIsFolderCollapsed (bool collapsed) { isFolderCollapsed = collapsed; }
+
+    void autoCrossfade()
+    {
+        std::vector<Item*> sorted;
+        for (auto& i : items) if (i != nullptr) sorted.push_back(i.get());
+        std::sort(sorted.begin(), sorted.end(), [](Item* a, Item* b){ return a->getStartTime() < b->getStartTime(); });
+        
+        for (size_t i = 0; i < sorted.size(); ++i)
+        {
+            if (sorted[i]->getType() == Item::Type::Audio)
+            {
+                if (i > 0 && sorted[i-1]->getType() == Item::Type::Audio)
+                {
+                    auto* prev = sorted[i-1];
+                    auto* curr = sorted[i];
+                    double overlap = (prev->getStartTime() + prev->getLength()) - curr->getStartTime();
+                    if (overlap > 0.0 && overlap < prev->getLength() && overlap < curr->getLength())
+                    {
+                        prev->setFadeOut(overlap);
+                        curr->setFadeIn(overlap);
+                    }
+                }
+            }
+        }
+    }
     
     void setPan(float newPan) { pan = newPan; }
     float getPan() const { return pan; }
@@ -1010,6 +1048,9 @@ private:
     float volume = 1.0f;
     float pan = 0.0f;
     int height = 80;
+    juce::Colour trackColor { juce::Colour(0xff444444) };
+    bool isFolderTrack = false;
+    bool isFolderCollapsed = false;
     float currentPeak = 0.0f;
     bool isMuted = false;
     bool isSolo = false;

@@ -53,6 +53,9 @@ public:
     double getFadeIn() const { return fadeInDuration; }
     double getFadeOut() const { return fadeOutDuration; }
 
+    void setPlaybackRate (double rate) { playbackRate = juce::jlimit (0.1, 4.0, rate); }
+    double getPlaybackRate() const { return playbackRate; }
+
     void setFilePath (const juce::String& path) { filePath = path; }
     juce::String getFilePath() const { return filePath; }
 
@@ -68,9 +71,11 @@ private:
     double fadeOutDuration = 0.0;
     juce::String filePath;
     bool isMuted = false;
+    double playbackRate = 1.0;
     double loadedSampleRate = 44100.0;
     juce::AudioBuffer<float> audioData;
     juce::MidiMessageSequence midiSequence;
+    juce::LagrangeInterpolator resamplers[2];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Item)
 };

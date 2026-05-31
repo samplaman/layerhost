@@ -5,7 +5,11 @@ void ItemComponent::mouseUp (const juce::MouseEvent& e)
     if (dragMode == DragMode::Move && !e.mods.isAltDown())
     {
         if (arrangement)
+        {
             arrangement->handleItemDragEnd (this);
+            if (auto* track = arrangement->getAudioEngine().getTrack(currentTrackIdx))
+                track->autoCrossfade();
+        }
     }
 }
 
@@ -234,15 +238,19 @@ void ItemComponent::paint (juce::Graphics& g)
         if (item->getMuted())
             g.setOpacity (0.35f);
 
+        juce::Colour trackCol = juce::Colour(0xff00b4d8);
+        if (arrangement && arrangement->getAudioEngine().getTrack(currentTrackIdx))
+            trackCol = arrangement->getAudioEngine().getTrack(currentTrackIdx)->getColor();
+
         if (item->getType() == Item::Type::Audio)
         {
-            g.setColour (juce::Colour (0x6600b4d8)); // Flat cyan background
+            g.setColour (trackCol.withAlpha(0.4f));
             g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
             
-            g.setColour (juce::Colour (0xff00b4d8)); // Flat cyan outline
+            g.setColour (trackCol);
             g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 4.0f, 1.0f);
 
-            g.setColour (juce::Colour (0xff0077b6)); // Solid dark cyan handle bars
+            g.setColour (trackCol.darker());
             g.fillRect (0, 0, 4, getHeight());
             g.fillRect (getWidth() - 4, 0, 4, getHeight());
             const auto& buf = item->getBuffer();
@@ -303,13 +311,13 @@ void ItemComponent::paint (juce::Graphics& g)
         }
         else if (item->getType() == Item::Type::Midi)
         {
-            g.setColour (juce::Colour (0x669c27b0)); // Flat purple background
+            g.setColour (trackCol.withAlpha(0.4f));
             g.fillRoundedRectangle(getLocalBounds().toFloat(), 4.0f);
             
-            g.setColour (juce::Colour (0xff9c27b0)); // Flat purple outline
+            g.setColour (trackCol);
             g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 4.0f, 1.0f);
 
-            g.setColour (juce::Colour (0xff7b1fa2)); // Solid dark purple handle bars
+            g.setColour (trackCol.darker());
             g.fillRect (0, 0, 4, getHeight());
             g.fillRect (getWidth() - 4, 0, 4, getHeight());
 

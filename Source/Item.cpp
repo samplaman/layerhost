@@ -88,6 +88,7 @@ void Item::copyAudioDataFrom (const Item& other)
     startTime = other.startTime;
     sourceOffset = other.sourceOffset;
     isMuted = other.isMuted;
+    playbackRate = other.playbackRate;
     filePath = other.filePath;
     loadedSampleRate = other.loadedSampleRate;
 }
@@ -156,34 +157,67 @@ void Item::process (juce::AudioBuffer<float>& buffer, double playheadPositionSec
         {
             int sourceChannel = juce::jmin (channel, audioData.getNumChannels() - 1);
             
-            if (fadeInDuration <= 0.0 && fadeOutDuration <= 0.0)
+            if (playbackRate == 1.0)
             {
-                buffer.addFrom (channel, startSampleInBlock, audioData, sourceChannel, readOffset, numSamplesToCopy);
+                if (fadeInDuration <= 0.0 && fadeOutDuration <= 0.0)
+                {
+                    buffer.addFrom (channel, startSampleInBlock, audioData, sourceChannel, readOffset, numSamplesToCopy);
+                }
+                else
+                {
+                    const float* src = audioData.getReadPointer(sourceChannel, readOffset);
+                    float* dst = buffer.getWritePointer(channel, startSampleInBlock);
+                    
+                    for (int i = 0; i < numSamplesToCopy; ++i)
+                    {
+                        double currentSampleTime = blockStartTime + ((startSampleInBlock + i) / targetSampleRate);
+                        double itemRelTime = currentSampleTime - startTime;
+                        
+                        float gain = 1.0f;
+                        
+                        if (fadeInDuration > 0.0 && itemRelTime < fadeInDuration)
+                        {
+                            gain = (float)(itemRelTime / fadeInDuration);
+                            if (gain < 0.0f) gain = 0.0f;
+                        }
+                        else if (fadeOutDuration > 0.0 && itemRelTime > (length - fadeOutDuration))
+                        {
+                            gain = (float)((length - itemRelTime) / fadeOutDuration);
+                            if (gain < 0.0f) gain = 0.0f;
+                        }
+                        
+                        dst[i] += src[i] * gain;
+                    }
+                }
             }
             else
             {
-                const float* src = audioData.getReadPointer(sourceChannel, readOffset);
-                float* dst = buffer.getWritePointer(channel, startSampleInBlock);
+                // Playback rate time-stretching/pitch-shifting using LagrangeInterpolator
+                int chResampler = juce::jmin(channel, 1);
+                int actualReadOffset = juce::roundToInt(readOffset * playbackRate);
+                int samplesAvailable = audioData.getNumSamples() - actualReadOffset;
                 
-                for (int i = 0; i < numSamplesToCopy; ++i)
+                if (samplesAvailable > 0)
                 {
-                    double currentSampleTime = blockStartTime + ((startSampleInBlock + i) / targetSampleRate);
-                    double itemRelTime = currentSampleTime - startTime;
+                    float* dst = buffer.getWritePointer(channel, startSampleInBlock);
+                    resamplers[chResampler].process(playbackRate, audioData.getReadPointer(sourceChannel, actualReadOffset), dst, numSamplesToCopy);
                     
-                    float gain = 1.0f;
-                    
-                    if (fadeInDuration > 0.0 && itemRelTime < fadeInDuration)
+                    if (fadeInDuration > 0.0 || fadeOutDuration > 0.0)
                     {
-                        gain = (float)(itemRelTime / fadeInDuration);
-                        if (gain < 0.0f) gain = 0.0f;
+                        for (int i = 0; i < numSamplesToCopy; ++i)
+                        {
+                            double currentSampleTime = blockStartTime + ((startSampleInBlock + i) / targetSampleRate);
+                            double itemRelTime = currentSampleTime - startTime;
+                            
+                            float gain = 1.0f;
+                            if (fadeInDuration > 0.0 && itemRelTime < fadeInDuration)
+                                gain = (float)(juce::jmax(0.0, itemRelTime / fadeInDuration));
+                            else if (fadeOutDuration > 0.0 && itemRelTime > (length - fadeOutDuration))
+                                gain = (float)(juce::jmax(0.0, (length - itemRelTime) / fadeOutDuration));
+                                
+                            dst[i] *= gain;
+                        }
                     }
-                    else if (fadeOutDuration > 0.0 && itemRelTime > (length - fadeOutDuration))
-                    {
-                        gain = (float)((length - itemRelTime) / fadeOutDuration);
-                        if (gain < 0.0f) gain = 0.0f;
-                    }
-                    
-                    dst[i] += src[i] * gain;
                 }
             }
         }
