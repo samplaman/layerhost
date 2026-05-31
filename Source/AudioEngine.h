@@ -17,8 +17,10 @@ public:
 
     void addTrack (Track::Type type = Track::Type::Audio, int midiChannel = 0);
     void removeTrack (int index);
+    void duplicateTrack (int index);
     void moveTrack (int fromIndex, int toIndex)
     {
+        const juce::ScopedLock sl (engineLock);
         if (fromIndex >= 0 && fromIndex < tracks.size() && toIndex >= 0 && toIndex < tracks.size())
         {
             auto t = tracks[fromIndex];
@@ -28,6 +30,8 @@ public:
             auto n = trackNodes[fromIndex];
             trackNodes.erase (trackNodes.begin() + fromIndex);
             trackNodes.insert (trackNodes.begin() + toIndex, n);
+            
+            updateRouting();
         }
     }
     int getNumTracks() const { return tracks.size(); }

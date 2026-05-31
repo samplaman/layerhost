@@ -44,7 +44,6 @@ public:
             setFullScreen (true);
            #else
             setResizable (true, true);
-            setFullScreen (true);
            #endif
 
             setVisible (true);

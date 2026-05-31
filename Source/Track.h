@@ -192,7 +192,7 @@ public:
 class Track : public juce::AudioProcessor
 {
 public:
-    enum class Type { Audio, Midi, Folder };
+    enum class Type { Audio, Midi };
 
     Track (Type t = Type::Audio)
         : AudioProcessor (BusesProperties()
@@ -205,10 +205,6 @@ public:
             for (int i = 0; i < 8; ++i)
                 synth.addVoice (new SimpleSynthVoice());
             synth.addSound (new SimpleSynthSound());
-        }
-        else if (trackType == Type::Folder)
-        {
-            isFolderTrack = true;
         }
     }
 
@@ -745,11 +741,7 @@ public:
     juce::Colour getColor() const { return trackColor; }
     void setColor (juce::Colour c) { trackColor = c; }
     
-    bool getIsFolderTrack() const { return isFolderTrack; }
-    void setIsFolderTrack (bool isFolder) { isFolderTrack = isFolder; }
-    
-    bool getIsFolderCollapsed() const { return isFolderCollapsed; }
-    void setIsFolderCollapsed (bool collapsed) { isFolderCollapsed = collapsed; }
+
 
     void autoCrossfade()
     {
@@ -1049,8 +1041,7 @@ private:
     float pan = 0.0f;
     int height = 80;
     juce::Colour trackColor { juce::Colour(0xff444444) };
-    bool isFolderTrack = false;
-    bool isFolderCollapsed = false;
+
     float currentPeak = 0.0f;
     bool isMuted = false;
     bool isSolo = false;

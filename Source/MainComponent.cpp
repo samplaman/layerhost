@@ -432,6 +432,34 @@ void ItemComponent::mouseDown (const juce::MouseEvent& e)
     
     hasSavedUndoForCurrentDrag = false;
 
+    if (e.mods.isPopupMenu())
+    {
+        juce::PopupMenu m;
+        m.addItem(1, "Duplicate Item");
+        m.addItem(2, "Delete Item");
+        m.addItem(3, "Mute/Unmute Item");
+        
+        m.showMenuAsync(juce::PopupMenu::Options(), [this](int r) {
+            if (r == 1)
+            {
+                arrangement->saveUndoState();
+                arrangement->duplicateItem (this);
+            }
+            else if (r == 2)
+            {
+                arrangement->saveUndoState();
+                arrangement->deleteItem (this);
+            }
+            else if (r == 3)
+            {
+                arrangement->saveUndoState();
+                item->setMuted (!item->getMuted());
+                arrangement->repaint();
+            }
+        });
+        return;
+    }
+
     auto tool = arrangement->getCurrentTool();
     if (tool == ArrangementComponent::EditTool::Split || e.mods.isAltDown())
     {
@@ -467,7 +495,7 @@ MainComponent::MainComponent() : mixerResizer (*this)
 {
     addChildComponent (mixerResizer);
     juce::LookAndFeel::setDefaultLookAndFeel (&modernLookAndFeel);
-    setSize (1000, 700);
+    setSize (1366, 800);
 
     // Setup Top Bar
     addAndMakeVisible (topBar);
@@ -1504,6 +1532,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
         menu.addItem (4, "Add Audio Track");
         menu.addItem (11, "Add MIDI Track");
         menu.addItem (5, "Add MIDI Item");
+        menu.addSeparator();
+        menu.addItem (24, "Clear All Mutes");
+        menu.addItem (25, "Clear All Solos");
     }
     else if (topLevelMenuIndex == 3) // Media
     {
@@ -1519,6 +1550,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
         menu.addSeparator();
         menu.addItem (17, "Show Mixer (X)", true, isMixerVisible);
         menu.addItem (18, "Dock Mixer at Bottom", true, isMixerDocked);
+        menu.addItem (23, "Show Master Track in Arrangement", true, arrangementView.showMasterTrack);
     }
     else if (topLevelMenuIndex == 5) // Transport
     {
@@ -1544,6 +1576,20 @@ void MainComponent::menuItemSelected (int menuItemID, int topLevelMenuIndex)
     else if (menuItemID == 3) spliceButton.triggerClick();
     else if (menuItemID == 4) addTrackButton.triggerClick();
     else if (menuItemID == 11) addMidiTrackButton.triggerClick();
+    else if (menuItemID == 24)
+    {
+        for (int i = 0; i < audioEngine.getNumTracks(); ++i)
+            if (auto* t = audioEngine.getTrack(i)) t->setMute(false);
+        updateTracksUI();
+        repaint();
+    }
+    else if (menuItemID == 25)
+    {
+        for (int i = 0; i < audioEngine.getNumTracks(); ++i)
+            if (auto* t = audioEngine.getTrack(i)) t->setSolo(false);
+        updateTracksUI();
+        repaint();
+    }
     else if (menuItemID == 5) addMidiButton.triggerClick();
     else if (menuItemID == 6) showMidiEditorButton.triggerClick();
     else if (menuItemID == 7) playButton.triggerClick();
@@ -1557,6 +1603,12 @@ void MainComponent::menuItemSelected (int menuItemID, int topLevelMenuIndex)
     else if (menuItemID == 16) openProject();
     else if (menuItemID == 17) setMixerVisible (!isMixerVisible);
     else if (menuItemID == 18) setMixerDocked (!isMixerDocked);
+    else if (menuItemID == 23)
+    {
+        arrangementView.showMasterTrack = !arrangementView.showMasterTrack;
+        arrangementView.updateItems();
+        repaint();
+    }
 }
 
 void MainComponent::openSettingsWindow()

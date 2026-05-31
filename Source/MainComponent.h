@@ -254,15 +254,7 @@ public:
             if (triggerRepaint) triggerRepaint();
         };
 
-        // Folder Collapse Button
-        addAndMakeVisible (folderCollapseBtn);
-        folderCollapseBtn.setButtonText (track->getIsFolderCollapsed() ? "+" : "-");
-        folderCollapseBtn.onClick = [this] {
-            track->setIsFolderCollapsed (!track->getIsFolderCollapsed());
-            folderCollapseBtn.setButtonText (track->getIsFolderCollapsed() ? "+" : "-");
-            if (triggerRepaint) triggerRepaint();
-        };
-        folderCollapseBtn.setVisible (track->getIsFolderTrack());
+
 
         // Type Label
         addAndMakeVisible (typeLabel);
@@ -418,13 +410,12 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().reduced (5);
-        float dragX = track->getFolderDepth() * 15.0f;
-        r.removeFromLeft (dragX); // Indent
+        
+        // Space for drag handle
+        r.removeFromLeft (12);
         
         auto topRow = r.removeFromTop (20);
         colorBtn.setBounds (topRow.removeFromLeft (15).reduced (2));
-        if (track->getIsFolderTrack())
-            folderCollapseBtn.setBounds (topRow.removeFromLeft (20).reduced (2));
         nameLabel.setBounds (topRow.removeFromLeft (100));
         typeLabel.setBounds (topRow);
 
@@ -487,17 +478,16 @@ public:
         g.setColour (juce::Colour (0xff2a2a30));
         g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
         
-        float indent = track->getFolderDepth() * 15.0f;
-        
-        // Draw folder grouping indicator line on the left if indented
-        if (track->getFolderDepth() > 0)
-        {
-            g.setColour (juce::Colour(0xff444455));
-            g.drawVerticalLine (7.0f, 0.0f, (float)getHeight());
-            g.drawHorizontalLine (getHeight() / 2, 7.0f, indent + 2.0f);
-        }
-        
-        // Removed drag handle drawing
+        // Draw drag handle indicator on the left
+        g.setColour (juce::Colour (0xff4a4a50));
+        float handleX = 6.0f;
+        float handleY = bounds.getCentreY() - 10.0f;
+        g.fillEllipse (handleX, handleY, 3.0f, 3.0f);
+        g.fillEllipse (handleX, handleY + 6.0f, 3.0f, 3.0f);
+        g.fillEllipse (handleX, handleY + 12.0f, 3.0f, 3.0f);
+        g.fillEllipse (handleX + 4.0f, handleY, 3.0f, 3.0f);
+        g.fillEllipse (handleX + 4.0f, handleY + 6.0f, 3.0f, 3.0f);
+        g.fillEllipse (handleX + 4.0f, handleY + 12.0f, 3.0f, 3.0f);
     }
 
     void updateStates()
@@ -526,8 +516,10 @@ public:
             m.addItem(1, "Move Track Up");
             m.addItem(2, "Move Track Down");
             m.addSeparator();
-            m.addItem(3, "Indent Track (Child)");
-            m.addItem(4, "Outdent Track (Parent)");
+            m.addItem(3, "Rename Track");
+            m.addItem(4, "Duplicate Track");
+            m.addSeparator();
+            m.addItem(5, "Delete Track");
             
             m.showMenuAsync(juce::PopupMenu::Options(), [this](int r) {
                 int trackIdx = -1;
@@ -548,14 +540,27 @@ public:
                 }
                 else if (r == 3)
                 {
-                    track->setFolderDepth (track->getFolderDepth() + 1);
-                    audioEngine.updateRouting();
-                    if (triggerRepaint) triggerRepaint();
+                    juce::AlertWindow* alert = new juce::AlertWindow("Rename Track", "Enter new name:", juce::AlertWindow::NoIcon);
+                    alert->addTextEditor("name", track->getName());
+                    alert->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey, 0, 0));
+                    alert->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey, 0, 0));
+                    alert->enterModalState(true, juce::ModalCallbackFunction::create([this, alert](int result) {
+                        if (result == 1)
+                        {
+                            auto name = alert->getTextEditorContents("name");
+                            track->setName(name);
+                            if (triggerRepaint) triggerRepaint();
+                        }
+                    }));
                 }
                 else if (r == 4)
                 {
-                    track->setFolderDepth (track->getFolderDepth() - 1);
-                    audioEngine.updateRouting();
+                    audioEngine.duplicateTrack(trackIdx);
+                    if (triggerRepaint) triggerRepaint();
+                }
+                else if (r == 5)
+                {
+                    audioEngine.removeTrack(trackIdx);
                     if (triggerRepaint) triggerRepaint();
                 }
             });
@@ -568,10 +573,9 @@ public:
             initialHeight = track->getHeight();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
-        else
+        else if (e.x <= 15)
         {
             isDraggingTrack = true;
-            initialDepth = track->getFolderDepth();
         }
     }
 
@@ -586,17 +590,6 @@ public:
         }
         else if (isDraggingTrack)
         {
-            // Horizontal indent/outdent
-            int deltaX = e.getDistanceFromDragStartX();
-            int depthChange = deltaX / 30; 
-            int newDepth = juce::jlimit(0, 10, initialDepth + depthChange);
-            if (newDepth != track->getFolderDepth())
-            {
-                track->setFolderDepth(newDepth);
-                audioEngine.updateRouting();
-                if (triggerRepaint) triggerRepaint();
-            }
-
             // Vertical live reordering
             auto* parent = getParentComponent();
             if (parent)
@@ -653,10 +646,8 @@ private:
     bool isResizing = false;
     bool isDraggingTrack = false;
     int initialHeight = 80;
-    int initialDepth = 0;
 
     juce::TextButton colorBtn;
-    juce::TextButton folderCollapseBtn;
     juce::Label nameLabel;
     juce::Label typeLabel;
     juce::TextButton muteBtn { "M" };
@@ -673,6 +664,7 @@ class ArrangementComponent : public juce::Component, public juce::FileDragAndDro
 {
 public:
     int headerWidth = 240;
+    bool showMasterTrack = false;
 
     class HeaderResizer : public juce::Component
     {
@@ -726,6 +718,36 @@ public:
                 selectedItem = nullptr;
             updateItems();
             repaint();
+        }
+    }
+    
+    void duplicateItem (ItemComponent* comp)
+    {
+        if (comp != nullptr)
+        {
+            Item* item = comp->getItem();
+            if (!item) return;
+
+            auto newItem = std::make_unique<Item>();
+            if (item->getType() == Item::Type::Audio)
+                newItem->copyAudioDataFrom (*item);
+            else
+                newItem->getMidiSequence().addSequence (item->getMidiSequence(), 0.0, 0.0, 1.0e10);
+                
+            newItem->setType (item->getType());
+            newItem->setStartTime (item->getStartTime() + item->getLength());
+            newItem->setLength (item->getLength());
+            newItem->setSourceOffset (item->getSourceOffset());
+            newItem->setFadeIn (item->getFadeIn());
+            newItem->setFadeOut (item->getFadeOut());
+            
+            auto* track = audioEngine.getTrack (comp->getTrackIdx());
+            if (track != nullptr)
+            {
+                track->addItem (std::move (newItem));
+                updateItems();
+                repaint();
+            }
         }
     }
     
@@ -1688,12 +1710,29 @@ public:
     void updateTrackHeaders()
     {
         int actualHeaderW = juce::jmax(0, headerWidth - 6);
-        if (headerComps.size() != audioEngine.getNumTracks())
+        int expectedHeaders = audioEngine.getNumTracks() + (showMasterTrack ? 1 : 0);
+        if (headerComps.size() != expectedHeaders)
         {
             headerComps.clear();
             for (int i = 0; i < audioEngine.getNumTracks(); ++i)
             {
                 auto* track = audioEngine.getTrack(i);
+                auto* comp = new TrackHeaderComponent (track, audioEngine, [this] {
+                    updateItems();
+                    repaint();
+                    if (onTrackStatusChanged) onTrackStatusChanged();
+                });
+                comp->onHeightChanged = [this] {
+                    updateItems();
+                    repaint();
+                };
+                headersContainer.addAndMakeVisible (comp);
+                headerComps.add (comp);
+            }
+            
+            if (showMasterTrack)
+            {
+                auto* track = audioEngine.getMasterTrack();
                 auto* comp = new TrackHeaderComponent (track, audioEngine, [this] {
                     updateItems();
                     repaint();
@@ -1722,6 +1761,19 @@ public:
                     }
                 }
             }
+            if (showMasterTrack)
+            {
+                auto* targetTrack = audioEngine.getMasterTrack();
+                for (int j = 0; j < headerComps.size(); ++j)
+                {
+                    if (headerComps[j]->getTrack() == targetTrack)
+                    {
+                        reordered.add(headerComps[j]);
+                        break;
+                    }
+                }
+            }
+            
             if (reordered.size() == headerComps.size())
             {
                 headerComps.clear(false);
@@ -1731,35 +1783,14 @@ public:
         }
 
         int y = -(int)scrollY;
-        bool inCollapsedFolder = false;
         
         for (int i = 0; i < headerComps.size(); ++i)
         {
-            auto* track = audioEngine.getTrack(i);
-            
-            if (track->getIsFolderTrack())
-            {
-                inCollapsedFolder = track->getIsFolderCollapsed();
-                headerComps[i]->setVisible (true);
-                headerComps[i]->setBounds (0, y, actualHeaderW, track->getHeight());
-                headerComps[i]->updateStates();
-                y += track->getTotalHeight() + 10;
-            }
-            else
-            {
-                if (inCollapsedFolder)
-                {
-                    headerComps[i]->setVisible (false);
-                    headerComps[i]->setBounds (0, y, actualHeaderW, 0); // hidden
-                }
-                else
-                {
-                    headerComps[i]->setVisible (true);
-                    headerComps[i]->setBounds (0, y, actualHeaderW, track->getHeight());
-                    headerComps[i]->updateStates();
-                    y += track->getTotalHeight() + 10;
-                }
-            }
+            auto* track = headerComps[i]->getTrack();
+            headerComps[i]->setVisible (true);
+            headerComps[i]->setBounds (0, y, actualHeaderW, track->getHeight());
+            headerComps[i]->updateStates();
+            y += track->getTotalHeight() + 10;
         }
     }
 
@@ -1769,37 +1800,32 @@ public:
 
         itemComps.clear();
         int y = -(int)scrollY; // Relative to timelineContainer (which starts at y=30)
-        bool inCollapsedFolder = false;
         
         for (int i = 0; i < audioEngine.getNumTracks(); ++i)
         {
             auto* track = audioEngine.getTrack(i);
-            
-            if (track->getIsFolderTrack())
+            int trackH = track->getHeight();
+            for (auto& item : track->getItems())
             {
-                inCollapsedFolder = track->getIsFolderCollapsed();
-                y += track->getTotalHeight() + 10;
-            }
-            else
-            {
-                if (!inCollapsedFolder)
+                if (item)
                 {
-                    int trackH = track->getHeight();
-                    for (auto& item : track->getItems())
-                    {
-                        if (item)
-                        {
-                            auto* comp = new ItemComponent (item.get(), pixelsPerSecond, i, this);
-                            timelineContainer.addAndMakeVisible(comp);
-                            int x = (int)(item->getStartTime() * pixelsPerSecond) - (int)scrollX;
-                            int w = (int)(item->getLength() * pixelsPerSecond);
-                            comp->setBounds (x, y, juce::jmax(1, w), trackH);
-                            itemComps.add (comp);
-                        }
-                    }
-                    y += track->getTotalHeight() + 10;
+                    auto* comp = new ItemComponent (item.get(), pixelsPerSecond, i, this);
+                    timelineContainer.addAndMakeVisible(comp);
+                    int x = (int)(item->getStartTime() * pixelsPerSecond) - (int)scrollX;
+                    int w = (int)(item->getLength() * pixelsPerSecond);
+                    comp->setBounds (x, y, juce::jmax(1, w), trackH);
+                    itemComps.add (comp);
                 }
             }
+            y += track->getTotalHeight() + 10;
+        }
+        
+        if (showMasterTrack)
+        {
+            auto* track = audioEngine.getMasterTrack();
+            int trackH = track->getHeight();
+            // Master track might have automation but typically no items, so skip item loop
+            y += track->getTotalHeight() + 10;
         }
     }
 

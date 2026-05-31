@@ -248,14 +248,65 @@ void AudioEngine::addTrack(Track::Type type, int midiChannel)
     updateRouting();
 }
 
-void AudioEngine::removeTrack(int index)
+void AudioEngine::removeTrack (int index)
 {
     const juce::ScopedLock sl (engineLock);
     if (index >= 0 && index < tracks.size())
     {
-        mainGraph->removeNode (trackNodes[index].get());
+        auto* t = tracks[index];
+        auto node = trackNodes[index];
+        mainGraph->removeNode(node.get());
         tracks.erase (tracks.begin() + index);
         trackNodes.erase (trackNodes.begin() + index);
+        updateRouting();
+    }
+}
+
+void AudioEngine::duplicateTrack (int index)
+{
+    const juce::ScopedLock sl (engineLock);
+    if (index >= 0 && index < tracks.size())
+    {
+        auto* sourceTrack = tracks[index];
+        auto* newTrack = new Track(sourceTrack->getTrackType());
+        newTrack->setName(sourceTrack->getName() + " (Copy)");
+        newTrack->setVolume(sourceTrack->getVolume());
+        newTrack->setPan(sourceTrack->getPan());
+        newTrack->setMute(sourceTrack->getMute());
+        newTrack->setSolo(sourceTrack->getSolo());
+        newTrack->setColor(sourceTrack->getColor());
+        newTrack->setRouting(sourceTrack->getRouting());
+        newTrack->setInputChannel(sourceTrack->getInputChannel());
+        newTrack->setMidiChannel(sourceTrack->getMidiChannel());
+        
+        for (const auto& item : sourceTrack->getItems())
+        {
+            if (item)
+            {
+                auto newItem = std::make_unique<Item>();
+                if (item->getType() == Item::Type::Audio)
+                {
+                    newItem->copyAudioDataFrom(*item);
+                }
+                else
+                {
+                    newItem->getMidiSequence().addSequence(item->getMidiSequence(), 0.0, 0.0, 1.0e10);
+                }
+                newItem->setType(item->getType());
+                newItem->setStartTime(item->getStartTime());
+                newItem->setLength(item->getLength());
+                newItem->setSourceOffset(item->getSourceOffset());
+                newItem->setFadeIn(item->getFadeIn());
+                newItem->setFadeOut(item->getFadeOut());
+                newTrack->addItem(std::move(newItem));
+            }
+        }
+        
+        tracks.insert(tracks.begin() + index + 1, newTrack);
+        
+        auto node = mainGraph->addNode (std::unique_ptr<juce::AudioProcessor>(newTrack));
+        trackNodes.insert (trackNodes.begin() + index + 1, node);
+        
         updateRouting();
     }
 }
@@ -273,6 +324,7 @@ void AudioEngine::updateRouting()
     for (int i = 0; i < 2; ++i)
         mainGraph->addConnection({ { masterNode->nodeID, i }, { audioOutputNode->nodeID, i } });
 
+
     // Reconnect tracks to their destinations
     for (size_t i = 0; i < tracks.size(); ++i)
     {
@@ -285,6 +337,7 @@ void AudioEngine::updateRouting()
         {
             destNode = trackNodes[destIdx];
         }
+
 
         for (int ch = 0; ch < 2; ++ch)
             mainGraph->addConnection({ { node->nodeID, ch }, { destNode->nodeID, ch } });
