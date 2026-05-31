@@ -11,10 +11,12 @@ AudioEngine::AudioEngine() : playHead(*this)
         
     deviceManager.initialiseWithDefaultDevices (2, 2);
     deviceManager.addAudioCallback (this);
+    keyboardState.addListener (this);
 }
 
 AudioEngine::~AudioEngine()
 {
+    keyboardState.removeListener (this);
     deviceManager.removeMidiInputDeviceCallback("", this);
     deviceManager.removeAudioCallback (this);
     processorPlayer.setProcessor (nullptr);
@@ -36,8 +38,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
                                                     float* const* outputChannelData, int numOutputChannels,
                                                     int numSamples, const juce::AudioIODeviceCallbackContext& context)
 {
-    const juce::ScopedTryLock sl (engineLock);
-    if (sl.isLocked())
+    auto runEngine = [&]()
     {
         // Run pre-rendering of eligible tracks in parallel using our ThreadPool
         int jobCount = 0;
@@ -130,14 +131,50 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const* inputCha
             metronomeToneSampleCount = 0;
             metronomeClickStartOffset = 0;
         }
+    };
+
+    if (isOfflineRendering.load())
+    {
+        const juce::ScopedLock sl (engineLock);
+        runEngine();
     }
     else
     {
-        metronomeToneSampleCount = 0;
-        metronomeClickStartOffset = 0;
-        for (int i = 0; i < numOutputChannels; ++i)
-            if (outputChannelData[i] != nullptr)
-                juce::FloatVectorOperations::clear (outputChannelData[i], numSamples);
+        const juce::ScopedTryLock sl (engineLock);
+        if (sl.isLocked())
+        {
+            runEngine();
+        }
+        else
+        {
+            metronomeToneSampleCount = 0;
+            metronomeClickStartOffset = 0;
+            for (int i = 0; i < numOutputChannels; ++i)
+                if (outputChannelData[i] != nullptr)
+                    juce::FloatVectorOperations::clear (outputChannelData[i], numSamples);
+        }
+    }
+}
+
+void AudioEngine::setOfflineRendering (bool offline, double sampleRate, int blockSize)
+{
+    const juce::ScopedLock sl (engineLock);
+    isOfflineRendering.store (offline);
+    if (offline)
+    {
+        currentSampleRate = sampleRate;
+        mainGraph->setPlayConfigDetails (0, 2, sampleRate, blockSize);
+        mainGraph->prepareToPlay (sampleRate, blockSize);
+    }
+    else
+    {
+        if (auto* device = deviceManager.getCurrentAudioDevice())
+        {
+            currentSampleRate = device->getCurrentSampleRate();
+            int bufferSize = device->getCurrentBufferSizeSamples();
+            mainGraph->setPlayConfigDetails (0, 2, currentSampleRate, bufferSize);
+            mainGraph->prepareToPlay (currentSampleRate, bufferSize);
+        }
     }
 }
 
@@ -209,6 +246,8 @@ void AudioEngine::setRecording (bool shouldRecord)
 
 void AudioEngine::handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiMessage& message)
 {
+    processorPlayer.getMidiMessageCollector().addMessageToQueue (message);
+
     if (isRecording && isPlaying)
     {
         for (auto* t : tracks)
@@ -217,6 +256,20 @@ void AudioEngine::handleIncomingMidiMessage (juce::MidiInput* source, const juce
                 t->addMidiEvent (message, playPosition.load());
         }
     }
+}
+
+void AudioEngine::handleNoteOn (juce::MidiKeyboardState* source, int midiChannel, int midiNoteNumber, float velocity)
+{
+    juce::MidiMessage msg = juce::MidiMessage::noteOn (midiChannel > 0 ? midiChannel : 1, midiNoteNumber, velocity);
+    msg.setTimeStamp (juce::Time::getMillisecondCounterHiRes() * 0.001);
+    handleIncomingMidiMessage (nullptr, msg);
+}
+
+void AudioEngine::handleNoteOff (juce::MidiKeyboardState* source, int midiChannel, int midiNoteNumber, float velocity)
+{
+    juce::MidiMessage msg = juce::MidiMessage::noteOff (midiChannel > 0 ? midiChannel : 1, midiNoteNumber, velocity);
+    msg.setTimeStamp (juce::Time::getMillisecondCounterHiRes() * 0.001);
+    handleIncomingMidiMessage (nullptr, msg);
 }
 
 void AudioEngine::addTrack(Track::Type type, int midiChannel)
@@ -460,6 +513,9 @@ std::unique_ptr<juce::XmlElement> AudioEngine::saveProjectToXml()
         trackXml->setAttribute ("height", track->getHeight());
         trackXml->setAttribute ("volumeAutomationEnabled", track->getVolumeAutomationEnabled() ? 1 : 0);
         trackXml->setAttribute ("panAutomationEnabled", track->getPanAutomationEnabled() ? 1 : 0);
+        trackXml->setAttribute ("indentLevel", track->getIndentLevel());
+        trackXml->setAttribute ("isFolder", track->getIsFolder() ? 1 : 0);
+        trackXml->setAttribute ("folderCollapsed", track->getFolderCollapsed() ? 1 : 0);
 
         // Save Volume Automation Points
         auto* volAutoXml = trackXml->createNewChildElement ("VOLUME_AUTOMATION");
@@ -650,6 +706,9 @@ bool AudioEngine::loadProjectFromXml (const juce::XmlElement& xml)
         track->setHeight (trackXml->getIntAttribute ("height", 80));
         track->setVolumeAutomationEnabled (trackXml->getIntAttribute ("volumeAutomationEnabled", trackXml->getIntAttribute ("automationEnabled", 0)) != 0);
         track->setPanAutomationEnabled (trackXml->getIntAttribute ("panAutomationEnabled", 0) != 0);
+        track->setIndentLevel (trackXml->getIntAttribute ("indentLevel", 0));
+        track->setIsFolder (trackXml->getIntAttribute ("isFolder", 0) != 0);
+        track->setFolderCollapsed (trackXml->getIntAttribute ("folderCollapsed", 0) != 0);
 
         // Restore Volume Automation Points
         track->getVolumeAutomation().clear();

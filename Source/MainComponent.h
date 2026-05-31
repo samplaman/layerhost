@@ -248,7 +248,7 @@ public:
         addAndMakeVisible (nameLabel);
         nameLabel.setText (track->getName(), juce::dontSendNotification);
         nameLabel.setEditable (false, true, false);
-        nameLabel.setFont (juce::Font (12.0f, juce::Font::bold));
+        nameLabel.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
         nameLabel.onTextChange = [this] {
             track->setName (nameLabel.getText());
             if (triggerRepaint) triggerRepaint();
@@ -259,7 +259,7 @@ public:
         // Type Label
         addAndMakeVisible (typeLabel);
         typeLabel.setText (track->getTrackType() == Track::Type::Midi ? "MIDI" : "AUDIO", juce::dontSendNotification);
-        typeLabel.setFont (juce::Font (9.0f, juce::Font::plain));
+        typeLabel.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::plain)));
         typeLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
 
         // Mute Button
@@ -409,10 +409,17 @@ public:
 
     void resized() override
     {
-        auto r = getLocalBounds().reduced (5);
+        auto r = getLocalBounds().reduced (2);
         
-        // Space for drag handle
-        r.removeFromLeft (12);
+        // Indent for nesting
+        int indent = track->getIndentLevel() * 14;
+        r.removeFromLeft (indent);
+        
+        // Collapse triangle for folder tracks (left-most 16px after indent)
+        if (track->getIsFolder())
+            r.removeFromLeft (16);
+        else
+            r.removeFromLeft (12); // drag-handle gap for non-folders
         
         auto topRow = r.removeFromTop (20);
         colorBtn.setBounds (topRow.removeFromLeft (15).reduced (2));
@@ -428,7 +435,7 @@ public:
             autoBtn.setVisible (true);
             volSlider.setVisible (true);
 
-            r.removeFromTop (4); // Gap
+            r.removeFromTop (4);
             auto midRow = r.removeFromTop (20);
             int btnW = midRow.getWidth() / 5;
             muteBtn.setBounds (midRow.removeFromLeft (btnW).reduced (1));
@@ -437,7 +444,7 @@ public:
             monBtn.setBounds (midRow.removeFromLeft (btnW).reduced (1));
             autoBtn.setBounds (midRow.reduced (1));
 
-            r.removeFromTop (4); // Gap
+            r.removeFromTop (4);
             volSlider.setBounds (r.removeFromTop (12));
         }
         else if (getHeight() >= 45)
@@ -449,7 +456,7 @@ public:
             autoBtn.setVisible (true);
             volSlider.setVisible (false);
 
-            r.removeFromTop (4); // Gap
+            r.removeFromTop (4);
             auto midRow = r.removeFromTop (20);
             int btnW = midRow.getWidth() / 5;
             muteBtn.setBounds (midRow.removeFromLeft (btnW).reduced (1));
@@ -472,22 +479,63 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto bounds = getLocalBounds().toFloat().reduced (2.0f);
-        g.setColour (juce::Colour (0xff1a1a1e));
+        int indent = track->getIndentLevel() * 14;
+
+        // Background — folder tracks get a slightly different tint
+        if (track->getIsFolder())
+            g.setColour (juce::Colour (0xff1e1e26));
+        else
+            g.setColour (juce::Colour (0xff1a1a1e));
         g.fillRoundedRectangle (bounds, 4.0f);
-        
-        g.setColour (juce::Colour (0xff2a2a30));
-        g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
-        
-        // Draw drag handle indicator on the left
-        g.setColour (juce::Colour (0xff4a4a50));
-        float handleX = 6.0f;
-        float handleY = bounds.getCentreY() - 10.0f;
-        g.fillEllipse (handleX, handleY, 3.0f, 3.0f);
-        g.fillEllipse (handleX, handleY + 6.0f, 3.0f, 3.0f);
-        g.fillEllipse (handleX, handleY + 12.0f, 3.0f, 3.0f);
-        g.fillEllipse (handleX + 4.0f, handleY, 3.0f, 3.0f);
-        g.fillEllipse (handleX + 4.0f, handleY + 6.0f, 3.0f, 3.0f);
-        g.fillEllipse (handleX + 4.0f, handleY + 12.0f, 3.0f, 3.0f);
+
+        // Left colour strip (indent-aware)
+        auto strip = bounds.withWidth (4.0f).withX (bounds.getX() + (float)indent);
+        g.setColour (track->getColor());
+        g.fillRoundedRectangle (strip, 2.0f);
+
+        // Connector line from parent to child
+        if (indent > 0)
+        {
+            g.setColour (track->getColor().withAlpha (0.35f));
+            float lineX = bounds.getX() + (float)indent - 7.0f;
+            g.drawVerticalLine ((int)lineX, bounds.getY(), bounds.getCentreY());
+            g.drawHorizontalLine ((int)bounds.getCentreY(), lineX, lineX + 10.0f);
+        }
+
+        // Border
+        g.setColour (isDropTarget ? juce::Colour (0xff00d4ff)
+                                  : juce::Colour (0xff2a2a30));
+        g.drawRoundedRectangle (bounds, 4.0f, isDropTarget ? 2.0f : 1.0f);
+
+        // Collapse triangle for folder tracks
+        if (track->getIsFolder())
+        {
+            float tx = bounds.getX() + (float)indent + 6.0f;
+            float ty = bounds.getCentreY();
+            juce::Path tri;
+            if (track->getFolderCollapsed())
+            {
+                // Pointing right (►)
+                tri.addTriangle (tx, ty - 5.0f, tx, ty + 5.0f, tx + 8.0f, ty);
+            }
+            else
+            {
+                // Pointing down (▼)
+                tri.addTriangle (tx, ty - 4.0f, tx + 8.0f, ty - 4.0f, tx + 4.0f, ty + 4.0f);
+            }
+            g.setColour (juce::Colour (0xffc0c0cc));
+            g.fillPath (tri);
+        }
+        else
+        {
+            // Drag-handle dots for non-folder tracks
+            float hx = bounds.getX() + (float)indent + 4.0f;
+            float hy = bounds.getCentreY() - 6.0f;
+            g.setColour (juce::Colour (0xff4a4a55));
+            for (int row = 0; row < 3; ++row)
+                for (int col = 0; col < 2; ++col)
+                    g.fillEllipse (hx + col * 4.0f, hy + row * 6.0f, 2.5f, 2.5f);
+        }
     }
 
     void updateStates()
@@ -512,6 +560,10 @@ public:
     {
         if (e.mods.isPopupMenu())
         {
+            int trackIdx = -1;
+            for (int i = 0; i < audioEngine.getNumTracks(); ++i)
+                if (audioEngine.getTrack(i) == track) { trackIdx = i; break; }
+
             juce::PopupMenu m;
             m.addItem(1, "Move Track Up");
             m.addItem(2, "Move Track Down");
@@ -519,13 +571,13 @@ public:
             m.addItem(3, "Rename Track");
             m.addItem(4, "Duplicate Track");
             m.addSeparator();
+            m.addItem(6, "Indent (nest deeper)", trackIdx > 0);
+            m.addItem(7, "Unindent (move out)", track->getIndentLevel() > 0);
+            m.addItem(8, track->getIsFolder() ? "Remove Folder" : "Make Folder Track");
+            m.addSeparator();
             m.addItem(5, "Delete Track");
             
-            m.showMenuAsync(juce::PopupMenu::Options(), [this](int r) {
-                int trackIdx = -1;
-                for (int i = 0; i < audioEngine.getNumTracks(); ++i)
-                    if (audioEngine.getTrack(i) == track) { trackIdx = i; break; }
-                
+            m.showMenuAsync(juce::PopupMenu::Options(), [this, trackIdx](int r) {
                 if (trackIdx == -1) return;
                 
                 if (r == 1 && trackIdx > 0)
@@ -563,8 +615,40 @@ public:
                     audioEngine.removeTrack(trackIdx);
                     if (triggerRepaint) triggerRepaint();
                 }
+                else if (r == 6)
+                {
+                    audioEngine.setTrackIndent (trackIdx, track->getIndentLevel() + 1);
+                    if (triggerRepaint) triggerRepaint();
+                }
+                else if (r == 7)
+                {
+                    audioEngine.setTrackIndent (trackIdx, track->getIndentLevel() - 1);
+                    if (triggerRepaint) triggerRepaint();
+                }
+                else if (r == 8)
+                {
+                    track->setIsFolder (!track->getIsFolder());
+                    if (triggerRepaint) triggerRepaint();
+                }
             });
             return;
+        }
+
+        // Click on collapse triangle
+        if (track->getIsFolder())
+        {
+            int indent = track->getIndentLevel() * 14;
+            juce::Rectangle<int> triHitbox (indent + 2, 0, 20, getHeight());
+            if (triHitbox.contains (e.x, e.y))
+            {
+                int trackIdx = -1;
+                for (int i = 0; i < audioEngine.getNumTracks(); ++i)
+                    if (audioEngine.getTrack(i) == track) { trackIdx = i; break; }
+                if (trackIdx >= 0)
+                    audioEngine.toggleFolderCollapsed (trackIdx);
+                if (triggerRepaint) triggerRepaint();
+                return;
+            }
         }
 
         if (e.y >= getHeight() - 6)
@@ -573,9 +657,12 @@ public:
             initialHeight = track->getHeight();
             setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
         }
-        else if (e.x <= 15)
+        else
         {
+            // Dragging from anywhere else initiates track reorder
             isDraggingTrack = true;
+            dragStartX = e.x;
+            dragIndentLevel = track->getIndentLevel();
         }
     }
 
@@ -590,18 +677,28 @@ public:
         }
         else if (isDraggingTrack)
         {
-            // Vertical live reordering
+            // --- Horizontal drag: change indent level ---
+            int horizDelta = e.getDistanceFromDragStartX();
+            int newIndent = dragIndentLevel + horizDelta / 22;
+            newIndent = juce::jlimit (0, 8, newIndent);
+            if (newIndent != track->getIndentLevel())
+            {
+                int trackIdx = -1;
+                for (int i = 0; i < audioEngine.getNumTracks(); ++i)
+                    if (audioEngine.getTrack(i) == track) { trackIdx = i; break; }
+                if (trackIdx >= 0)
+                    audioEngine.setTrackIndent (trackIdx, newIndent);
+                if (triggerRepaint) triggerRepaint();
+            }
+
+            // --- Vertical drag: reorder tracks ---
             auto* parent = getParentComponent();
             if (parent)
             {
                 auto parentEvent = e.getEventRelativeTo(parent);
-                int y = parentEvent.y;
-                
                 int targetTrackIdx = -1;
-                // BUGFIX: Account for headersContainer scrollY if any (though typically layout handles this, let's just use component relative Y properly)
-                // Actually, parentEvent is relative to headersContainer, so we must calculate Y offsets identically to updateTrackHeaders
-                int currentY = 0; // Assuming headersContainer's children start at 0 but wait, updateTrackHeaders sets them starting at -(int)scrollY
-                // Let's just find which track component contains the mouse!
+                TrackHeaderComponent* hoveredComp = nullptr;
+
                 for (int i = 0; i < parent->getNumChildComponents(); ++i)
                 {
                     auto* child = parent->getChildComponent(i);
@@ -609,13 +706,26 @@ public:
                     {
                         if (auto* thc = dynamic_cast<TrackHeaderComponent*>(child))
                         {
+                            hoveredComp = thc;
                             for (int t = 0; t < audioEngine.getNumTracks(); ++t)
                                 if (audioEngine.getTrack(t) == thc->getTrack()) { targetTrackIdx = t; break; }
                         }
                         break;
                     }
                 }
-                
+
+                // Highlight the drop target
+                for (int i = 0; i < parent->getNumChildComponents(); ++i)
+                    if (auto* thc = dynamic_cast<TrackHeaderComponent*>(parent->getChildComponent(i)))
+                    {
+                        bool shouldHighlight = (thc == hoveredComp && thc != this);
+                        if (thc->isDropTarget != shouldHighlight)
+                        {
+                            thc->isDropTarget = shouldHighlight;
+                            thc->repaint();
+                        }
+                    }
+
                 int currentTrackIdx = -1;
                 for (int i = 0; i < audioEngine.getNumTracks(); ++i)
                     if (audioEngine.getTrack(i) == track) { currentTrackIdx = i; break; }
@@ -631,6 +741,12 @@ public:
 
     void mouseUp (const juce::MouseEvent& e) override
     {
+        // Clear all drop-target highlights
+        if (auto* parent = getParentComponent())
+            for (int i = 0; i < parent->getNumChildComponents(); ++i)
+                if (auto* thc = dynamic_cast<TrackHeaderComponent*>(parent->getChildComponent(i)))
+                    if (thc->isDropTarget) { thc->isDropTarget = false; thc->repaint(); }
+
         isResizing = false;
         isDraggingTrack = false;
         setMouseCursor (juce::MouseCursor::NormalCursor);
@@ -638,6 +754,7 @@ public:
 
     std::function<void()> onHeightChanged;
     Track* getTrack() const { return track; }
+    bool isDropTarget = false;  // Set to true while a sibling is dragged over us
 
 private:
     Track* track;
@@ -646,6 +763,8 @@ private:
     bool isResizing = false;
     bool isDraggingTrack = false;
     int initialHeight = 80;
+    int dragStartX = 0;
+    int dragIndentLevel = 0;
 
     juce::TextButton colorBtn;
     juce::Label nameLabel;
@@ -796,15 +915,109 @@ public:
     std::function<void()> onSaveUndoStateRequested;
     void saveUndoState() { if (onSaveUndoStateRequested) onSaveUndoStateRequested(); }
 
+    // ---- Inline '+' button for adding tracks ----
+    struct AddTrackButton : public juce::Component
+    {
+        std::function<void(int x, int y)> onClick;
+        bool hovered = false;
+        bool pressed = false;
+
+        AddTrackButton()
+        {
+            setRepaintsOnMouseActivity (false);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            auto b = getLocalBounds().toFloat().reduced (3.0f);
+
+            // Glass background
+            juce::ColourGradient grad (
+                juce::Colour (pressed ? 0xff2a3a4a : (hovered ? 0xff252535 : 0xff1e1e28)),
+                b.getTopLeft(),
+                juce::Colour (pressed ? 0xff1a2a3a : (hovered ? 0xff1a1a24 : 0xff161620)),
+                b.getBottomRight(), false);
+            g.setGradientFill (grad);
+            g.fillRoundedRectangle (b, 6.0f);
+
+            // Border glow
+            g.setColour (hovered ? juce::Colour (0xff00c8ff).withAlpha (0.7f)
+                                 : juce::Colour (0xff3a3a50).withAlpha (0.8f));
+            g.drawRoundedRectangle (b, 6.0f, 1.5f);
+
+            // '+' symbol
+            float cx = b.getCentreX();
+            float cy = b.getCentreY();
+            float arm = 7.0f;
+            float thick = 2.0f;
+            juce::Colour plusCol = hovered ? juce::Colour (0xff00d4ff) : juce::Colour (0xff8888aa);
+            g.setColour (plusCol);
+            g.fillRect (cx - arm, cy - thick * 0.5f, arm * 2.0f, thick);  // horizontal
+            g.fillRect (cx - thick * 0.5f, cy - arm, thick, arm * 2.0f);  // vertical
+        }
+
+        void mouseEnter (const juce::MouseEvent&) override { hovered = true;  repaint(); }
+        void mouseExit  (const juce::MouseEvent&) override { hovered = false; pressed = false; repaint(); }
+        void mouseDown  (const juce::MouseEvent&) override { pressed = true;  repaint(); }
+        void mouseUp    (const juce::MouseEvent& e) override
+        {
+            pressed = false; repaint();
+            if (getLocalBounds().contains (e.getPosition()) && onClick)
+                onClick (getScreenX() + getWidth() / 2, getScreenY());
+        }
+        void mouseDrag  (const juce::MouseEvent&) override {}
+    };
+    AddTrackButton addTrackBtn;
+
     ArrangementComponent (AudioEngine& engine) : audioEngine(engine)
     {
         setWantsKeyboardFocus (true);
         addAndMakeVisible (headersContainer);
         addAndMakeVisible (headerResizer);
         addAndMakeVisible (timelineContainer);
+        addAndMakeVisible (addTrackBtn);
         timelineContainer.setInterceptsMouseClicks (false, true);
-        addMouseListener (this, true); // Listen to children for scrubbing
+        addMouseListener (this, true);
+
+        addTrackBtn.onClick = [this](int sx, int sy)
+        {
+            juce::PopupMenu m;
+            m.addItem (1, juce::String::fromUTF8 ("\U0001F3B5  Add Audio Track"));
+            m.addItem (2, juce::String::fromUTF8 ("\U0001F3B9  Add MIDI Track"));
+            m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({sx - 80, sy - 8, 160, 8}),
+                [this](int r)
+                {
+                    if (r == 1)
+                    {
+                        audioEngine.addTrack (Track::Type::Audio);
+                        updateItems();
+                        repaint();
+                        if (onTrackStatusChanged) onTrackStatusChanged();
+                    }
+                    else if (r == 2)
+                    {
+                        // Show MIDI channel picker inline
+                        juce::PopupMenu ch;
+                        ch.addItem (100, "Omni (all channels)");
+                        for (int c = 1; c <= 16; ++c)
+                            ch.addItem (100 + c, "Channel " + juce::String (c));
+                        ch.showMenuAsync (juce::PopupMenu::Options(),
+                            [this](int cr)
+                            {
+                                if (cr >= 100)
+                                {
+                                    int midiCh = (cr == 100) ? 0 : (cr - 100);
+                                    audioEngine.addTrack (Track::Type::Midi, midiCh);
+                                    updateItems();
+                                    repaint();
+                                    if (onTrackStatusChanged) onTrackStatusChanged();
+                                }
+                            });
+                    }
+                });
+        };
     }
+
     
     void resized() override
     {
@@ -813,6 +1026,11 @@ public:
         headerResizer.setBounds (actualHeaderW, 30, 6, getHeight() - 30);
         timelineContainer.setBounds (headerWidth, 30, getWidth() - headerWidth, getHeight() - 30);
         updateTrackHeaders();
+        // Place '+' button at bottom of header panel
+        int btnH = 30;
+        int btnY = getHeight() - btnH - 4;
+        addTrackBtn.setBounds (4, btnY, juce::jmax(0, headerWidth - 14), btnH);
+        addTrackBtn.toFront (false);
     }
     
     double getScrollX() const { return scrollX; }
@@ -1499,7 +1717,7 @@ public:
         g.setColour (juce::Colour (0xff1c1c20));
         g.fillRect (0, 0, headerWidth, 30);
         g.setColour (juce::Colour (0xffe2e2e6));
-        g.setFont (juce::Font(12.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
         g.drawText ("TRACKS", 0, 0, headerWidth, 30, juce::Justification::centred);
         
         g.setColour (juce::Colour (0xff8e8e93));
@@ -1566,28 +1784,82 @@ public:
         auto arrBounds = getLocalBounds();
         int y = 30 - (int)scrollY; 
         
+        // We need two passes: one to collect folder bracket extents, one to draw
+        // We'll do it inline by tracking open folder contexts
+        struct FolderBracket { int startY; int level; juce::Colour colour; };
+        std::vector<FolderBracket> openFolders;
+
         for (int i = 0; i < audioEngine.getNumTracks(); ++i)
         {
             auto* track = audioEngine.getTrack(i);
             if (track == nullptr) continue;
+
+            // Skip tracks hidden inside a collapsed folder
+            if (!audioEngine.isTrackVisible (i))
+                continue;
+
+            int trackIndent = track->getIndentLevel();
+            float indentPx = (float)(trackIndent * 14);
+
+            // Close any open folders whose level >= this track's level
+            for (int fi = (int)openFolders.size() - 1; fi >= 0; --fi)
+            {
+                if (openFolders[fi].level >= trackIndent)
+                {
+                    // Draw the closing bracket line
+                    float bx = (float)headerWidth + indentPx - 9.0f;
+                    if (bx >= (float)headerWidth)
+                    {
+                        g.setColour (openFolders[fi].colour.withAlpha (0.5f));
+                        g.drawVerticalLine ((int)bx, (float)openFolders[fi].startY, (float)y);
+                    }
+                    openFolders.erase (openFolders.begin() + fi);
+                }
+            }
+
             float trackH = (float)track->getHeight();
-            juce::Rectangle<float> trackBounds ((float)headerWidth + 4.0f, (float)y, arrBounds.getWidth() - (float)headerWidth - 8.0f, trackH);
+            juce::Rectangle<float> trackBounds ((float)headerWidth + 4.0f + indentPx,
+                                                (float)y,
+                                                arrBounds.getWidth() - (float)headerWidth - 8.0f - indentPx,
+                                                trackH);
             
-            if (i == selectedTrackIdx)
-                g.setColour (juce::Colour (0xff232328));
+            // Folder track: lighter header bar
+            if (track->getIsFolder())
+            {
+                if (i == selectedTrackIdx)
+                    g.setColour (juce::Colour (0xff2a2a3a));
+                else
+                    g.setColour (juce::Colour (0xff1e1e28));
+            }
             else
-                g.setColour (juce::Colour (0xff18181c));
+            {
+                if (i == selectedTrackIdx)
+                    g.setColour (juce::Colour (0xff232328));
+                else
+                    g.setColour (juce::Colour (trackIndent > 0 ? 0xff161618u : 0xff18181cu));
+            }
             
             g.fillRoundedRectangle (trackBounds, 4.0f);
+
+            // Colour border strip on the left of the lane
+            auto laneStrip = trackBounds.withWidth (3.0f);
+            g.setColour (track->getColor().withAlpha (0.4f));
+            g.fillRect (laneStrip);
+
             g.setColour (juce::Colour (0xff2a2a30));
             g.drawRoundedRectangle (trackBounds, 4.0f, 1.0f);
 
-            y += trackH + 10;
+            // If this is a folder track, start a bracket context
+            if (track->getIsFolder() && !track->getFolderCollapsed())
+                openFolders.push_back ({ y, trackIndent, track->getColor() });
+
+            y += (int)trackH + 10;
 
             for (const auto& lane : track->getActiveAutomationLanes())
             {
                 // Draw automation sub-lane background
-                juce::Rectangle<float> autoBounds ((float)headerWidth + 12.0f, (float)y, arrBounds.getWidth() - (float)headerWidth - 24.0f, 50.0f);
+                juce::Rectangle<float> autoBounds ((float)headerWidth + 12.0f + indentPx, (float)y,
+                                                   arrBounds.getWidth() - (float)headerWidth - 24.0f - indentPx, 50.0f);
                 g.setColour (juce::Colour (0xff101012));
                 g.fillRoundedRectangle (autoBounds, 4.0f);
                 g.setColour (juce::Colour (0xff1c1c20));
@@ -1601,6 +1873,18 @@ public:
                 y += 50 + 10;
             }
         }
+
+        // Close any remaining open folder brackets at the bottom
+        for (auto& fb : openFolders)
+        {
+            float bx = (float)headerWidth + (float)(fb.level * 14) - 9.0f;
+            if (bx >= (float)headerWidth)
+            {
+                g.setColour (fb.colour.withAlpha (0.5f));
+                g.drawVerticalLine ((int)bx, (float)fb.startY, (float)y);
+            }
+        }
+
 
         // --- DRAW AUTOMATION CURVES ---
         auto drawCurve = [&g, this, minX = (float)headerWidth, maxX = (float)getWidth()]
@@ -1695,9 +1979,10 @@ public:
         {
             auto* track = audioEngine.getTrack(i);
             if (track == nullptr) continue;
+            if (!audioEngine.isTrackVisible (i)) continue;
             float trackH = (float)track->getHeight();
             
-            autoY += trackH + 10;
+            autoY += (int)trackH + 10;
 
             for (const auto& lane : track->getActiveAutomationLanes())
             {
@@ -1829,10 +2114,19 @@ public:
         for (int i = 0; i < headerComps.size(); ++i)
         {
             auto* track = headerComps[i]->getTrack();
-            headerComps[i]->setVisible (true);
-            headerComps[i]->setBounds (0, y, actualHeaderW, track->getHeight());
-            headerComps[i]->updateStates();
-            y += track->getTotalHeight() + 10;
+            // Find index in AudioEngine to check visibility
+            int trackEngineIdx = -1;
+            for (int t = 0; t < audioEngine.getNumTracks(); ++t)
+                if (audioEngine.getTrack(t) == track) { trackEngineIdx = t; break; }
+
+            bool visible = (trackEngineIdx < 0) || audioEngine.isTrackVisible (trackEngineIdx);
+            headerComps[i]->setVisible (visible);
+            if (visible)
+            {
+                headerComps[i]->setBounds (0, y, actualHeaderW, track->getHeight());
+                headerComps[i]->updateStates();
+                y += track->getTotalHeight() + 10;
+            }
         }
     }
 
@@ -1846,6 +2140,11 @@ public:
         for (int i = 0; i < audioEngine.getNumTracks(); ++i)
         {
             auto* track = audioEngine.getTrack(i);
+
+            // Skip clips for hidden (inside a collapsed folder) tracks
+            if (!audioEngine.isTrackVisible (i))
+                continue;
+
             int trackH = track->getHeight();
             for (auto& item : track->getItems())
             {
@@ -2151,6 +2450,12 @@ public:
         
         while (! threadShouldExit())
         {
+            if (engine != nullptr && engine->isOfflineRenderingEnabled())
+            {
+                juce::Thread::sleep (50);
+                continue;
+            }
+            
             if (engine != nullptr)
             {
                 double engPos = engine->getPlayPosition();
@@ -2397,23 +2702,23 @@ public:
         // 1. Bars & Beats Pane (Left)
         auto leftPane = bounds.withRight (midX).reduced (4.0f);
         g.setColour (juce::Colour (0xffe2e2e6));
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::bold)));
         juce::String barsStr = juce::String::formatted ("%03d . %02d . %03d", bar, beat, tick);
         g.drawText (barsStr, leftPane.withBottom (leftPane.getBottom() - 10.0f), juce::Justification::centred);
         
         g.setColour (juce::Colour (0xff6e6e73));
-        g.setFont (juce::Font (7.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (7.0f, juce::Font::bold)));
         g.drawText ("BAR     BEAT    TICK", leftPane.withTop (leftPane.getBottom() - 12.0f), juce::Justification::centred);
         
         // 2. Timecode Pane (Right)
         auto rightPane = bounds.withLeft (midX).reduced (4.0f);
         g.setColour (juce::Colour (0xff00b4d8)); // Flat cyan
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::bold)));
         juce::String timeStr = juce::String::formatted ("%02d:%02d.%03d", mins, secs, ms);
         g.drawText (timeStr, rightPane.withBottom (rightPane.getBottom() - 10.0f), juce::Justification::centred);
         
         g.setColour (juce::Colour (0xff6e6e73));
-        g.setFont (juce::Font (7.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (7.0f, juce::Font::bold)));
         g.drawText ("TIMECODE", rightPane.withTop (rightPane.getBottom() - 12.0f), juce::Justification::centred);
     }
     
@@ -2820,6 +3125,8 @@ private:
     TimecodeDisplay timecodeDisplay { audioEngine };
     juce::Slider bpmSlider;
     juce::Label bpmLabel;
+    juce::TextButton tapTempoButton { "Tap" };
+    juce::Array<double> tapTimes;
     juce::ComboBox snapComboBox;
     juce::Label snapLabel;
     
@@ -2848,6 +3155,8 @@ private:
 
     bool isMixerDocked = true;
     bool isMixerVisible = true;
+    bool isKeyboardVisible = false;
+    juce::MidiKeyboardComponent virtualKeyboard { audioEngine.keyboardState, juce::MidiKeyboardComponent::horizontalKeyboard };
 
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::Array<juce::File> systemPluginFiles;
@@ -2856,6 +3165,7 @@ private:
     void loadWav(bool atPlayhead = false);
     void loadWavToSelectedTrack(bool atPlayhead = false);
     void importVideo();
+    void handleTapTempo();
     
     void showRenderDialog();
     void renderToFile (juce::File file, int formatIndex, int bitDepth, double sampleRate);

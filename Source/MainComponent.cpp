@@ -148,6 +148,7 @@ void ArrangementComponent::filesDropped (const juce::StringArray& files, int x, 
     int currentY = 30 - (int)scrollY;
     for (int i = 0; i < audioEngine.getNumTracks(); ++i)
     {
+        if (!audioEngine.isTrackVisible (i)) continue;
         auto* t = audioEngine.getTrack(i);
         int nextY = currentY + t->getTotalHeight() + 10;
             
@@ -448,14 +449,14 @@ void ItemComponent::paint (juce::Graphics& g)
             
             // Draw a subtle "MIDI" text label in a corner so the clip type remains identifiable
             g.setColour (juce::Colour (0xccffffff));
-            g.setFont (juce::Font (10.0f, juce::Font::bold));
+            g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
             g.drawText ("MIDI", getLocalBounds().reduced (6), juce::Justification::topLeft);
         }
 
         if (item->getMuted())
         {
             g.setColour (juce::Colour (0xffea4335));
-            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            g.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
             g.drawText ("[MUTED]", getLocalBounds().reduced (5), juce::Justification::bottomLeft);
         }
 
@@ -541,6 +542,9 @@ void ItemComponent::mouseDown (const juce::MouseEvent& e)
 MainComponent::MainComponent() : mixerResizer (*this)
 {
     addChildComponent (mixerResizer);
+    addChildComponent (virtualKeyboard);
+    virtualKeyboard.setWantsKeyboardFocus (true);
+    virtualKeyboard.setMouseClickGrabsKeyboardFocus (true);
     juce::LookAndFeel::setDefaultLookAndFeel (&modernLookAndFeel);
     setSize (1366, 800);
 
@@ -640,7 +644,7 @@ MainComponent::MainComponent() : mixerResizer (*this)
     // BPM Label
     topBar.addAndMakeVisible (bpmLabel);
     bpmLabel.setText ("BPM:", juce::dontSendNotification);
-    bpmLabel.setFont (juce::Font (12.0f, juce::Font::bold));
+    bpmLabel.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
     bpmLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     bpmLabel.setJustificationType (juce::Justification::centredRight);
 
@@ -654,10 +658,13 @@ MainComponent::MainComponent() : mixerResizer (*this)
         updateBpmGlobally (bpmSlider.getValue());
     };
 
+    topBar.addAndMakeVisible (tapTempoButton);
+    tapTempoButton.onClick = [this] { handleTapTempo(); };
+
     // Snap Label
     topBar.addAndMakeVisible (snapLabel);
     snapLabel.setText ("SNAP:", juce::dontSendNotification);
-    snapLabel.setFont (juce::Font (12.0f, juce::Font::bold));
+    snapLabel.setFont (juce::Font (juce::FontOptions (12.0f, juce::Font::bold)));
     snapLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     snapLabel.setJustificationType (juce::Justification::centredRight);
 
@@ -883,6 +890,14 @@ bool MainComponent::keyPressed (const juce::KeyPress& key)
     if (key.getKeyCode() == 'x' || key.getKeyCode() == 'X')
     {
         setMixerVisible (!isMixerVisible);
+        return true;
+    }
+
+    if (key.getKeyCode() == 'k' || key.getKeyCode() == 'K')
+    {
+        isKeyboardVisible = !isKeyboardVisible;
+        resized();
+        repaint();
         return true;
     }
 
@@ -1349,6 +1364,17 @@ void MainComponent::resized()
 
     menuBar.setBounds(bounds.removeFromTop(24));
     topBar.setBounds (bounds.removeFromTop (50));
+    if (isKeyboardVisible)
+    {
+        auto keyboardBounds = bounds.removeFromBottom (90);
+        virtualKeyboard.setBounds (keyboardBounds.reduced (4));
+        virtualKeyboard.setVisible (true);
+    }
+    else
+    {
+        virtualKeyboard.setVisible (false);
+    }
+
     if (isMixerDocked && isMixerVisible)
     {
         auto mixerBounds = bounds.removeFromBottom (dockedMixerHeight);
@@ -1402,7 +1428,9 @@ void MainComponent::resized()
     tb.removeFromLeft (15);
 
     bpmLabel.setBounds (tb.removeFromLeft (40));
-    bpmSlider.setBounds (tb.removeFromLeft (120));
+    bpmSlider.setBounds (tb.removeFromLeft (110));
+    tb.removeFromLeft (5);
+    tapTempoButton.setBounds (tb.removeFromLeft (40));
     tb.removeFromLeft (15);
     snapLabel.setBounds (tb.removeFromLeft (45));
     snapComboBox.setBounds (tb.removeFromLeft (90));
@@ -1613,6 +1641,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
         menu.addSeparator();
         bool isVidVis = (videoWindow != nullptr && videoWindow->isVisible());
         menu.addItem (31, isVidVis ? "Hide Video Player" : "Show Video Player");
+        menu.addSeparator();
+        menu.addItem (33, "Show Virtual MIDI Keyboard", true, isKeyboardVisible);
     }
     else if (topLevelMenuIndex == 5) // Transport
     {
@@ -1696,6 +1726,12 @@ void MainComponent::menuItemSelected (int menuItemID, int topLevelMenuIndex)
     else if (menuItemID == 32)
     {
         showRenderDialog();
+    }
+    else if (menuItemID == 33)
+    {
+        isKeyboardVisible = !isKeyboardVisible;
+        resized();
+        repaint();
     }
 }
 
@@ -2142,7 +2178,15 @@ void MainComponent::renderToFile (juce::File file, int formatIndex, int bitDepth
     if (formatIndex == 1) format = &aiffFormat;
     if (formatIndex == 2) format = &oggFormat;
     
-    std::unique_ptr<juce::AudioFormatWriter> writer (format->createWriterFor (new juce::FileOutputStream (file), sampleRate, 2, bitDepth, {}, 0));
+    std::unique_ptr<juce::FileOutputStream> outStream = file.createOutputStream();
+    if (outStream == nullptr || outStream->failedToOpen())
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Render Failed", "Failed to open output file for writing:\n" + file.getFullPathName());
+        audioEngine.getDeviceManager().addAudioCallback (&audioEngine);
+        return;
+    }
+
+    std::unique_ptr<juce::AudioFormatWriter> writer (format->createWriterFor (outStream.release(), sampleRate, 2, bitDepth, {}, 0));
     
     if (writer != nullptr)
     {
@@ -2167,6 +2211,13 @@ void MainComponent::renderToFile (juce::File file, int formatIndex, int bitDepth
         juce::AudioBuffer<float> buffer (2, blockSize);
         juce::AudioIODeviceCallbackContext context {};
         
+        // Save metronome status and disable it
+        bool metronomeWasEnabled = audioEngine.getMetronomeEnabled();
+        audioEngine.setMetronomeEnabled (false);
+        
+        // Enable offline rendering mode in AudioEngine
+        audioEngine.setOfflineRendering (true, sampleRate, blockSize);
+        
         audioEngine.setPlayPosition (0.0);
         audioEngine.setPlaying (true);
         
@@ -2184,7 +2235,45 @@ void MainComponent::renderToFile (juce::File file, int formatIndex, int bitDepth
         
         audioEngine.setPlaying (false);
         audioEngine.setPlayPosition (0.0);
+        
+        // Restore offline rendering mode and metronome
+        audioEngine.setOfflineRendering (false);
+        audioEngine.setMetronomeEnabled (metronomeWasEnabled);
+        
+        juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon, "Render Complete", "Project rendered successfully to:\n" + file.getFullPathName());
+    }
+    else
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Render Failed", "Failed to create audio format writer for:\n" + file.getFullPathName());
     }
     
     audioEngine.getDeviceManager().addAudioCallback (&audioEngine);
+}
+
+void MainComponent::handleTapTempo()
+{
+    double currentTime = juce::Time::getMillisecondCounterHiRes() * 0.001;
+    
+    // Remove taps older than 2.5 seconds
+    while (tapTimes.size() > 0 && currentTime - tapTimes.getFirst() > 2.5)
+        tapTimes.remove (0);
+        
+    tapTimes.add (currentTime);
+    
+    if (tapTimes.size() >= 2)
+    {
+        double totalDiff = 0.0;
+        for (int i = 1; i < tapTimes.size(); ++i)
+            totalDiff += (tapTimes[i] - tapTimes[i - 1]);
+            
+        double averageDiff = totalDiff / (tapTimes.size() - 1);
+        if (averageDiff > 0.1)
+        {
+            double calculatedBpm = 60.0 / averageDiff;
+            calculatedBpm = juce::jlimit (20.0, 300.0, calculatedBpm);
+            
+            // Round to nearest integer for clean tempo
+            bpmSlider.setValue (std::round (calculatedBpm));
+        }
+    }
 }

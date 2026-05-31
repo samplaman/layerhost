@@ -4,7 +4,9 @@
 #include <atomic>
 #include "Track.h"
 
-class AudioEngine : public juce::AudioIODeviceCallback, public juce::MidiInputCallback
+class AudioEngine : public juce::AudioIODeviceCallback,
+                    public juce::MidiInputCallback,
+                    public juce::MidiKeyboardState::Listener
 {
 public:
     AudioEngine();
@@ -51,6 +53,7 @@ public:
 
     juce::AudioFormatManager& getFormatManager() { return formatManager; }
     juce::AudioPluginFormatManager& getPluginFormatManager() { return pluginFormatManager; }
+    juce::MidiKeyboardState keyboardState;
 
     void setPlaying (bool shouldPlay);
     bool getPlaying() const { return isPlaying; }
@@ -129,6 +132,45 @@ public:
         }
     }
 
+    // --- Folder / Nesting helpers ---
+
+    /** Returns false if this track is a child of a collapsed folder. */
+    bool isTrackVisible (int index) const
+    {
+        if (index < 0 || index >= (int)tracks.size()) return true;
+        int myLevel = tracks[index]->getIndentLevel();
+        // Walk backwards to find the nearest folder that wraps us
+        for (int i = index - 1; i >= 0; --i)
+        {
+            auto* t = tracks[i];
+            int lvl = t->getIndentLevel();
+            if (lvl < myLevel)          // This is a parent
+            {
+                if (t->getIsFolder() && t->getFolderCollapsed())
+                    return false;       // Hidden inside a collapsed folder
+                myLevel = lvl;          // Walk up the hierarchy
+            }
+        }
+        return true;
+    }
+
+    /** Toggle a folder's collapsed state. */
+    void toggleFolderCollapsed (int index)
+    {
+        if (auto* t = getTrack (index))
+            t->setFolderCollapsed (!t->getFolderCollapsed());
+    }
+
+    /** Promote/demote a track's indent level, clamped 0-8. */
+    void setTrackIndent (int index, int level)
+    {
+        if (auto* t = getTrack (index))
+            t->setIndentLevel (level);
+    }
+
+    void setOfflineRendering (bool offline, double sampleRate = 44100.0, int blockSize = 512);
+    bool isOfflineRenderingEnabled() const { return isOfflineRendering.load(); }
+
     void audioDeviceIOCallbackWithContext (const float* const* inputChannelData, int numInputChannels,
                                            float* const* outputChannelData, int numOutputChannels,
                                            int numSamples, const juce::AudioIODeviceCallbackContext& context) override;
@@ -136,6 +178,10 @@ public:
     void audioDeviceStopped() override;
 
     void handleIncomingMidiMessage (juce::MidiInput* source, const juce::MidiMessage& message) override;
+
+    // MidiKeyboardState::Listener overrides
+    void handleNoteOn (juce::MidiKeyboardState* source, int midiChannel, int midiNoteNumber, float velocity) override;
+    void handleNoteOff (juce::MidiKeyboardState* source, int midiChannel, int midiNoteNumber, float velocity) override;
 
 private:
     class GlobalPlayHead : public juce::AudioPlayHead
@@ -162,6 +208,7 @@ private:
     
     juce::AudioFormatManager formatManager;
     juce::AudioPluginFormatManager pluginFormatManager;
+    class GlobalPlayHead; // Forward declare if needed, but it's defined above
     GlobalPlayHead playHead;
 
     bool isPlaying = false;
@@ -173,6 +220,7 @@ private:
     double loopStart = 0.0;
     double loopEnd = 4.0;
     double currentSampleRate = 44100.0;
+    std::atomic<bool> isOfflineRendering { false };
 
     bool metronomeEnabled = false;
     double bpm = 120.0;

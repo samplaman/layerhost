@@ -54,7 +54,7 @@ public:
                 g.fillRect(0, y, 40, noteHeight);
                 
                 g.setColour(juce::Colour(0xff6e6e73));
-                g.setFont(juce::Font(7.5f));
+                g.setFont (juce::Font (juce::FontOptions (7.5f)));
                 g.drawText(noteName, 2, y, 35, noteHeight, juce::Justification::centredRight);
             }
             else
@@ -67,12 +67,12 @@ public:
                 if (nInOct == 0)
                 {
                     g.setColour(juce::Colour(0xffffffff));
-                    g.setFont(juce::Font(9.0f, juce::Font::bold));
+                    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
                 }
                 else
                 {
                     g.setColour(juce::Colour(0xffa1a1a6));
-                    g.setFont(juce::Font(8.0f));
+                    g.setFont (juce::Font (juce::FontOptions (8.0f)));
                 }
                 g.drawText(noteName, 2, y, 54, noteHeight, juce::Justification::centredRight);
             }
@@ -373,7 +373,7 @@ public:
         
         // Draw "VELOCITY" label
         g.setColour (juce::Colour (0xff8e8e93));
-        g.setFont (juce::Font (10.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
         g.drawText ("VELOCITY", 5, 0, 50, getHeight(), juce::Justification::centred);
 
         // Draw velocity bars

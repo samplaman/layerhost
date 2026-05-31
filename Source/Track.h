@@ -213,6 +213,14 @@ public:
     const juce::String getName() const override { return name; }
     Type getTrackType() const { return trackType; }
 
+    // --- Folder / Nesting ---
+    int  getIndentLevel()       const { return indentLevel; }
+    void setIndentLevel (int lvl) { indentLevel = juce::jlimit (0, 8, lvl); }
+    bool getIsFolder()          const { return isFolder; }
+    void setIsFolder (bool f)         { isFolder = f; }
+    bool getFolderCollapsed()   const { return isFolderCollapsed; }
+    void setFolderCollapsed (bool c)  { isFolderCollapsed = c; }
+
     void prepareToPlay (double sampleRate, int samplesPerBlock) override
     {
         if (trackType == Type::Midi)
@@ -1038,6 +1046,11 @@ private:
     Type trackType = Type::Audio;
     juce::String name;
     float volume = 1.0f;
+
+    // Folder / nesting
+    int  indentLevel       = 0;
+    bool isFolder          = false;
+    bool isFolderCollapsed = false;
     float pan = 0.0f;
     int height = 80;
     juce::Colour trackColor { juce::Colour(0xff444444) };
