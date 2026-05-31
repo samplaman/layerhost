@@ -186,7 +186,7 @@ private:
     ArrangementComponent* arrangement;
     juce::ComponentDragger dragger;
 
-    enum class DragMode { Move, TrimLeft, TrimRight, None };
+    enum class DragMode { Move, TrimLeft, TrimRight, StretchLeft, StretchRight, None };
     DragMode dragMode = DragMode::None;
     bool hasSavedUndoForCurrentDrag = false;
 };
@@ -751,6 +751,48 @@ public:
         }
     }
     
+    void deleteSelectedItem()
+    {
+        if (selectedItem != nullptr && selectedTrackIdx != -1)
+        {
+            auto* track = audioEngine.getTrack (selectedTrackIdx);
+            if (track)
+            {
+                track->extractItem (selectedItem);
+                selectedItem = nullptr;
+                updateItems();
+                repaint();
+            }
+        }
+    }
+    
+    void duplicateSelectedItem()
+    {
+        if (selectedItem != nullptr && selectedTrackIdx != -1)
+        {
+            auto newItem = std::make_unique<Item>();
+            if (selectedItem->getType() == Item::Type::Audio)
+                newItem->copyAudioDataFrom (*selectedItem);
+            else
+                newItem->getMidiSequence().addSequence (selectedItem->getMidiSequence(), 0.0, 0.0, 1.0e10);
+                
+            newItem->setType (selectedItem->getType());
+            newItem->setStartTime (selectedItem->getStartTime() + selectedItem->getLength());
+            newItem->setLength (selectedItem->getLength());
+            newItem->setSourceOffset (selectedItem->getSourceOffset());
+            newItem->setFadeIn (selectedItem->getFadeIn());
+            newItem->setFadeOut (selectedItem->getFadeOut());
+            
+            auto* track = audioEngine.getTrack (selectedTrackIdx);
+            if (track != nullptr)
+            {
+                track->addItem (std::move (newItem));
+                updateItems();
+                repaint();
+            }
+        }
+    }
+
     std::function<void()> onSaveUndoStateRequested;
     void saveUndoState() { if (onSaveUndoStateRequested) onSaveUndoStateRequested(); }
 
@@ -2041,6 +2083,267 @@ public:
     
 private:
     MainComponent* mainComp;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MixerWindow)
+};
+
+class FFmpegVideoComponent : public juce::Component, public juce::Thread
+{
+public:
+    FFmpegVideoComponent() : Thread ("FFmpegVideoThread") {}
+    
+    void setAudioEngine(AudioEngine* eng) { engine = eng; }
+    
+    ~FFmpegVideoComponent() override
+    {
+        stopThread (2000);
+        if (ffmpegProcess.isRunning())
+            ffmpegProcess.kill();
+    }
+    
+    void load (const juce::File& file)
+    {
+        stopThread (2000);
+        if (ffmpegProcess.isRunning())
+            ffmpegProcess.kill();
+            
+        juce::ChildProcess ffprobe;
+        juce::StringArray args = { "ffprobe", "-v", "error", "-select_streams", "v:0", 
+                                   "-show_entries", "stream=width,height,r_frame_rate", "-of", "csv=s=x:p=0", 
+                                   file.getFullPathName() };
+        if (ffprobe.start (args))
+        {
+            juce::String output = ffprobe.readAllProcessOutput().trim();
+            auto tokens = juce::StringArray::fromTokens (output, "x", "");
+            if (tokens.size() >= 2)
+            {
+                videoWidth = tokens[0].getIntValue();
+                videoHeight = tokens[1].getIntValue();
+            }
+            if (tokens.size() >= 3)
+            {
+                auto fpsTokens = juce::StringArray::fromTokens (tokens[2], "/", "");
+                if (fpsTokens.size() == 2 && fpsTokens[1].getFloatValue() > 0)
+                    fps = fpsTokens[0].getFloatValue() / fpsTokens[1].getFloatValue();
+                else
+                    fps = fpsTokens[0].getFloatValue();
+            }
+        }
+        
+        if (videoWidth > 0 && videoHeight > 0)
+        {
+            if (fps <= 0.0) fps = 30.0;
+            currentFile = file;
+            currentImage = juce::Image (juce::Image::RGB, videoWidth, videoHeight, false);
+            frameSize = videoWidth * videoHeight * 3;
+            startThread();
+        }
+    }
+    
+    void setPlayPosition (double timeSeconds)
+    {
+        // Now handled autonomously by checking the engine!
+    }
+    
+    void run() override
+    {
+        juce::MemoryBlock pipeBuffer;
+        double frameDuration = 1.0 / fps;
+        
+        while (! threadShouldExit())
+        {
+            if (engine != nullptr)
+            {
+                double engPos = engine->getPlayPosition();
+                if (std::abs(currentPosition.load() - engPos) > 0.5)
+                {
+                    needsSeek = true;
+                    targetPosition = engPos;
+                }
+            }
+            
+            if (needsSeek)
+            {
+                if (ffmpegProcess.isRunning())
+                    ffmpegProcess.kill();
+                    
+                needsSeek = false;
+                currentPosition = targetPosition.load();
+                pipeBuffer.setSize(0); // clear buffer
+                
+                juce::StringArray args = {
+                    "ffmpeg", "-loglevel", "quiet", "-hwaccel", "auto", "-ss", juce::String (currentPosition.load()), "-i", currentFile.getFullPathName(),
+                    "-s", juce::String(videoWidth) + "x" + juce::String(videoHeight),
+                    "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "2", 
+                    "-sn", "-an", "-"
+                };
+                
+                ffmpegProcess.start (args);
+            }
+            
+            if (ffmpegProcess.isRunning() && !needsSeek)
+            {
+                char readBuf[65536];
+                int bytesRead = ffmpegProcess.readProcessOutput (readBuf, sizeof(readBuf));
+                if (bytesRead > 0)
+                {
+                    pipeBuffer.append (readBuf, (size_t) bytesRead);
+                }
+                
+                int startIdx = -1;
+                int endIdx = -1;
+                const uint8_t* data = (const uint8_t*) pipeBuffer.getData();
+                size_t size = pipeBuffer.getSize();
+                
+                for (size_t i = 0; i + 1 < size; ++i)
+                {
+                    if (data[i] == 0xFF && data[i+1] == 0xD8)
+                    {
+                        if (startIdx == -1) startIdx = (int) i;
+                    }
+                    else if (data[i] == 0xFF && data[i+1] == 0xD9)
+                    {
+                        if (startIdx != -1)
+                        {
+                            endIdx = (int) i + 1;
+                            break;
+                        }
+                    }
+                }
+                
+                if (startIdx != -1 && endIdx != -1)
+                {
+                    size_t jpegSize = endIdx - startIdx + 1;
+                    juce::MemoryInputStream stream (data + startIdx, jpegSize, false);
+                    juce::JPEGImageFormat jpeg;
+                    juce::Image newFrame = jpeg.decodeImage (stream);
+                    
+                    pipeBuffer.removeSection (0, endIdx + 1);
+                    
+                    currentPosition = currentPosition.load() + frameDuration;
+                    
+                    if (newFrame.isValid())
+                    {
+                        juce::MessageManager::callAsync ([this, newFrame] { 
+                            currentImage = newFrame;
+                            repaint(); 
+                        });
+                    }
+                    
+                    if (engine != nullptr && engine->getPlaying())
+                    {
+                        while (currentPosition.load() > engine->getPlayPosition() && engine->getPlaying() && !needsSeek && !threadShouldExit())
+                        {
+                            juce::Thread::sleep (2);
+                        }
+                    }
+                    else
+                    {
+                        while ((engine == nullptr || !engine->getPlaying()) && !needsSeek && !threadShouldExit())
+                        {
+                            juce::Thread::sleep (10);
+                        }
+                    }
+                }
+                else if (bytesRead == 0)
+                {
+                    juce::Thread::sleep (2);
+                }
+            }
+            else
+            {
+                juce::Thread::sleep (10);
+            }
+        }
+    }
+    
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colours::black);
+        if (currentImage.isValid())
+        {
+            auto bounds = getLocalBounds().toFloat();
+            float imageAspect = (float) currentImage.getWidth() / (float) currentImage.getHeight();
+            float boundsAspect = bounds.getWidth() / bounds.getHeight();
+            
+            juce::Rectangle<float> drawRect = bounds;
+            if (imageAspect > boundsAspect)
+            {
+                // Fit width, letterbox height
+                float newHeight = bounds.getWidth() / imageAspect;
+                drawRect = drawRect.withSizeKeepingCentre (bounds.getWidth(), newHeight);
+            }
+            else
+            {
+                // Fit height, pillarbox width
+                float newWidth = bounds.getHeight() * imageAspect;
+                drawRect = drawRect.withSizeKeepingCentre (newWidth, bounds.getHeight());
+            }
+            
+            g.drawImage (currentImage, drawRect);
+        }
+    }
+    
+    double getPlayPosition() const { return currentPosition; }
+    
+    void play() {} // Autonomous now
+    void stop() {} // Autonomous now
+    
+private:
+    AudioEngine* engine = nullptr;
+    juce::ChildProcess ffmpegProcess;
+    juce::File currentFile;
+    int videoWidth = 0;
+    int videoHeight = 0;
+    int frameSize = 0;
+    double fps = 30.0;
+    juce::Image currentImage;
+    
+    std::atomic<bool> isPlayingFlag { false };
+    std::atomic<bool> needsSeek { true };
+    std::atomic<double> targetPosition { 0.0 };
+    std::atomic<double> currentPosition { 0.0 };
+};
+
+class VideoWindow : public juce::DocumentWindow
+{
+public:
+    VideoWindow (juce::String name, juce::Colour backgroundColour, int requiredButtons)
+        : DocumentWindow (name, backgroundColour, requiredButtons)
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (&videoComponent, false);
+        setResizable (true, false);
+        setSize (640, 360);
+    }
+    
+    void closeButtonPressed() override
+    {
+        setVisible (false);
+    }
+    
+    void loadVideo (const juce::File& file)
+    {
+        videoComponent.load (file);
+    }
+    
+    void setPlayPosition (double timeSeconds)
+    {
+        videoComponent.setPlayPosition (timeSeconds);
+    }
+    
+    double getPlayPosition() const
+    {
+        return videoComponent.getPlayPosition();
+    }
+    
+    void setAudioEngine(AudioEngine* e) { videoComponent.setAudioEngine(e); }
+    
+    void play() { videoComponent.play(); }
+    void stop() { videoComponent.stop(); }
+
+private:
+    FFmpegVideoComponent videoComponent;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VideoWindow)
 };
 
 class TimecodeDisplay : public juce::Component, public juce::Timer
@@ -2526,6 +2829,9 @@ private:
     // Mixer View
     std::unique_ptr<MixerWindow> mixerWindow;
     juce::Viewport mixerViewport;
+    std::unique_ptr<VideoWindow> videoWindow;
+
+    juce::OwnedArray<PluginWindow> pluginWindows;
     juce::Component mixerView;
     juce::OwnedArray<juce::Slider> mixerSliders;
     juce::OwnedArray<juce::Slider> mixerPanSliders;
@@ -2549,6 +2855,10 @@ private:
     void scanSystemPlugins();
     void loadWav(bool atPlayhead = false);
     void loadWavToSelectedTrack(bool atPlayhead = false);
+    void importVideo();
+    
+    void showRenderDialog();
+    void renderToFile (juce::File file, int formatIndex, int bitDepth, double sampleRate);
     void loadVst();
     void loadVstIntoSlot(int trackIdx, int slotIdx);
     void loadPluginFileIntoSlot(const juce::File& file, int trackIdx, int slotIdx);

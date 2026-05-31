@@ -59,6 +59,7 @@ target_link_libraries(layerhost PRIVATE
     juce::juce_core
     juce::juce_data_structures
     juce::juce_opengl
+    juce::juce_video
     juce_clap_hosting
 )
 

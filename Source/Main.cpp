@@ -12,7 +12,30 @@ public:
 
     void initialise (const juce::String& commandLine) override
     {
-        mainWindow.reset (new MainWindow (getApplicationName()));
+        juce::Image splashImg (juce::Image::ARGB, 600, 350, true);
+        {
+            juce::Graphics g (splashImg);
+            g.fillAll (juce::Colour (0xff121214)); // DAW dark background
+            
+            g.setColour (juce::Colour (0xff00b4d8)); // Main accent colour
+            g.setFont (50.0f);
+            g.drawText ("LAYERHOST", splashImg.getBounds().withY(-30), juce::Justification::centred, true);
+            
+            g.setColour (juce::Colours::white.withAlpha(0.7f));
+            g.setFont (18.0f);
+            g.drawText ("Loading Plugins and Engine...", splashImg.getBounds().withY(50), juce::Justification::centred, true);
+            
+            g.setColour (juce::Colour (0xff00b4d8).withAlpha(0.3f));
+            g.drawRect (splashImg.getBounds(), 4.0f);
+        }
+        
+        splashScreen = new juce::SplashScreen ("Splash", splashImg, true);
+        splashScreen->deleteAfterDelay (juce::RelativeTime::seconds (3.0), false);
+        
+        // Delay main window creation to allow splash screen to render
+        juce::MessageManager::callAsync ([this] {
+            mainWindow.reset (new MainWindow (getApplicationName()));
+        });
     }
 
     void shutdown() override
@@ -60,6 +83,7 @@ public:
 
 private:
     std::unique_ptr<MainWindow> mainWindow;
+    juce::SplashScreen* splashScreen = nullptr;
 };
 
 START_JUCE_APPLICATION (LayerHostApplication)

@@ -32,7 +32,7 @@ void ItemComponent::mouseDoubleClick (const juce::MouseEvent& e)
 
 void ItemComponent::mouseDrag (const juce::MouseEvent& e)
 {
-    if (e.mods.isAltDown() || arrangement->getCurrentTool() != ArrangementComponent::EditTool::Select) return;
+    if (arrangement->getCurrentTool() != ArrangementComponent::EditTool::Select) return;
     
     if (!hasSavedUndoForCurrentDrag)
     {
@@ -83,6 +83,50 @@ void ItemComponent::mouseDrag (const juce::MouseEvent& e)
                 item->setStartTime (newTime);
                 item->setSourceOffset (item->getSourceOffset() + (dx / pixelsPerSecond));
                 item->setLength (newWidth / pixelsPerSecond);
+            }
+        }
+    }
+    else if (dragMode == DragMode::StretchRight)
+    {
+        int newWidth = juce::jmax (10, (int)e.getEventRelativeTo(this).position.x);
+        double oldLength = item ? item->getLength() : 0.0;
+        double newLength = newWidth / pixelsPerSecond;
+        if (oldLength > 0.001 && item)
+        {
+            double scale = newLength / oldLength;
+            item->setLength (newLength);
+            item->setPlaybackRate (item->getPlaybackRate() / scale);
+            item->setSourceOffset (item->getSourceOffset() * scale);
+            setBounds (getX(), getY(), newWidth, getHeight());
+        }
+    }
+    else if (dragMode == DragMode::StretchLeft)
+    {
+        int dx = e.getEventRelativeTo(this).position.x;
+        if (dx != 0 && getWidth() - dx > 10)
+        {
+            int newX = getX() + dx;
+            double newTime = (newX + arrangement->getScrollX()) / pixelsPerSecond;
+            
+            if (newTime < 0.0)
+            {
+                dx += (int)(-newTime * pixelsPerSecond);
+                newX = -(int)arrangement->getScrollX();
+                newTime = 0.0;
+            }
+            
+            int newWidth = getWidth() - dx;
+            double oldLength = item ? item->getLength() : 0.0;
+            double newLength = newWidth / pixelsPerSecond;
+            
+            if (oldLength > 0.001 && item)
+            {
+                double scale = newLength / oldLength;
+                item->setStartTime (newTime);
+                item->setLength (newLength);
+                item->setPlaybackRate (item->getPlaybackRate() / scale);
+                item->setSourceOffset (item->getSourceOffset() * scale);
+                setBounds (newX, getY(), newWidth, getHeight());
             }
         }
     }
@@ -262,8 +306,9 @@ void ItemComponent::paint (juce::Graphics& g)
 
                 auto* readPtr = buf.getReadPointer(0);
                 int numSamplesTotal = buf.getNumSamples();
-                int startSample = (int)(item->getSourceOffset() * 44100.0);
-                int endSample = startSample + (int)(item->getLength() * 44100.0);
+                double pbRate = item->getPlaybackRate();
+                int startSample = (int)(item->getSourceOffset() * pbRate * 44100.0);
+                int endSample = startSample + (int)(item->getLength() * pbRate * 44100.0);
                 
                 if (startSample >= 0 && endSample <= numSamplesTotal && startSample < endSample && getWidth() > 0)
                 {
@@ -461,7 +506,9 @@ void ItemComponent::mouseDown (const juce::MouseEvent& e)
     }
 
     auto tool = arrangement->getCurrentTool();
-    if (tool == ArrangementComponent::EditTool::Split || e.mods.isAltDown())
+    bool isEdgeClick = (e.position.x <= 5.0f || e.position.x >= getWidth() - 5.0f);
+    
+    if (tool == ArrangementComponent::EditTool::Split || (e.mods.isAltDown() && !isEdgeClick))
     {
         arrangement->saveUndoState();
         arrangement->splitItem (this, e.position.x);
@@ -482,9 +529,9 @@ void ItemComponent::mouseDown (const juce::MouseEvent& e)
     }
 
     if (e.position.x <= 5.0f)
-        dragMode = DragMode::TrimLeft;
+        dragMode = e.mods.isAltDown() ? DragMode::StretchLeft : DragMode::TrimLeft;
     else if (e.position.x >= getWidth() - 5.0f)
-        dragMode = DragMode::TrimRight;
+        dragMode = e.mods.isAltDown() ? DragMode::StretchRight : DragMode::TrimRight;
     else
         dragMode = DragMode::Move;
         
@@ -1498,6 +1545,8 @@ void MainComponent::timerCallback()
         }
     }
     
+    // Video syncing is now autonomously handled by the FFmpegVideoComponent thread
+    
     if (audioEngine.getPlaying() || audioEngine.getRecording())
     {
         arrangementView.updateHeaderStates();
@@ -1519,11 +1568,21 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
         menu.addSeparator();
         menu.addItem (2, "Load Plugin...");
         menu.addSeparator();
+        menu.addItem (30, "Import Video to Track...");
+        menu.addSeparator();
         menu.addItem (15, "Save Project...");
         menu.addItem (16, "Open Project...");
+        menu.addSeparator();
+        menu.addItem (32, "Render to File...");
     }
     else if (topLevelMenuIndex == 1) // Edit
     {
+        menu.addItem (26, "Undo");
+        menu.addItem (27, "Redo");
+        menu.addSeparator();
+        menu.addItem (28, "Duplicate Selected Item", true, arrangementView.selectedItem != nullptr);
+        menu.addItem (29, "Delete Selected Item", true, arrangementView.selectedItem != nullptr);
+        menu.addSeparator();
         menu.addItem (3, "Splice at Playhead");
         menu.addItem (13, "Auto-Fade All Audio Items");
     }
@@ -1551,6 +1610,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int topLevelMenuIndex, const juc
         menu.addItem (17, "Show Mixer (X)", true, isMixerVisible);
         menu.addItem (18, "Dock Mixer at Bottom", true, isMixerDocked);
         menu.addItem (23, "Show Master Track in Arrangement", true, arrangementView.showMasterTrack);
+        menu.addSeparator();
+        bool isVidVis = (videoWindow != nullptr && videoWindow->isVisible());
+        menu.addItem (31, isVidVis ? "Hide Video Player" : "Show Video Player");
     }
     else if (topLevelMenuIndex == 5) // Transport
     {
@@ -1609,6 +1671,75 @@ void MainComponent::menuItemSelected (int menuItemID, int topLevelMenuIndex)
         arrangementView.updateItems();
         repaint();
     }
+    else if (menuItemID == 26) undo();
+    else if (menuItemID == 27) redo();
+    else if (menuItemID == 28)
+    {
+        undoManager.saveUndoState();
+        arrangementView.duplicateSelectedItem();
+    }
+    else if (menuItemID == 29)
+    {
+        undoManager.saveUndoState();
+        arrangementView.deleteSelectedItem();
+    }
+    else if (menuItemID == 30) importVideo();
+    else if (menuItemID == 31)
+    {
+        if (videoWindow == nullptr)
+        {
+            videoWindow = std::make_unique<VideoWindow>("Video Player", getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId), juce::DocumentWindow::allButtons);
+            videoWindow->setAudioEngine(&audioEngine);
+        }
+        videoWindow->setVisible (!videoWindow->isVisible());
+    }
+    else if (menuItemID == 32)
+    {
+        showRenderDialog();
+    }
+}
+
+void MainComponent::importVideo()
+{
+    fileChooser = std::make_unique<juce::FileChooser> ("Select a video file to import...",
+                                                       juce::File::getSpecialLocation (juce::File::userMoviesDirectory),
+                                                       "*.mp4;*.mkv;*.avi;*.mov");
+                                                       
+    auto folderChooserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+    fileChooser->launchAsync (folderChooserFlags, [this] (const juce::FileChooser& chooser)
+    {
+        auto result = chooser.getResult();
+        if (result.existsAsFile())
+        {
+            if (videoWindow == nullptr)
+            {
+                videoWindow = std::make_unique<VideoWindow>("Video Player", getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId), juce::DocumentWindow::allButtons);
+                videoWindow->setAudioEngine(&audioEngine);
+            }
+            videoWindow->loadVideo (result);
+            videoWindow->setVisible (true);
+            
+            // Attempt to extract audio from the video and place it on the timeline
+            auto item = std::make_unique<Item>();
+            if (item->loadFile (result, audioEngine.getFormatManager(), audioEngine.getCurrentSampleRate()))
+            {
+                undoManager.saveUndoState();
+                audioEngine.addTrack(Track::Type::Audio);
+                int newTrackIdx = audioEngine.getNumTracks() - 1;
+                if (auto* newTrack = audioEngine.getTrack (newTrackIdx))
+                {
+                    newTrack->setName ("Video Audio");
+                    item->setStartTime (0.0);
+                    newTrack->addItem (std::move (item));
+                    
+                    updateTracksUI();
+                    arrangementView.updateItems();
+                    repaint();
+                }
+            }
+        }
+    });
 }
 
 void MainComponent::openSettingsWindow()
@@ -1950,3 +2081,110 @@ void MainComponent::MixerResizer::mouseDrag (const juce::MouseEvent& e)
     mainComp.resized();
 }
 
+
+void MainComponent::showRenderDialog()
+{
+    auto window = std::make_unique<juce::AlertWindow> ("Render Master Audio", "Select render options:", juce::AlertWindow::NoIcon);
+    
+    window->addComboBox ("format", { "WAV", "AIFF", "OGG" }, "Format");
+    window->addComboBox ("bitdepth", { "16-bit", "24-bit", "32-bit Float" }, "Bit Depth");
+    window->addComboBox ("samplerate", { "44100", "48000", "96000" }, "Sample Rate");
+    window->addButton ("Cancel", 0);
+    window->addButton ("Render", 1);
+    
+    auto* w = window.release();
+    w->enterModalState (true, juce::ModalCallbackFunction::create ([this, w] (int result)
+    {
+        std::unique_ptr<juce::AlertWindow> del (w); // ensure deletion
+        if (result == 1)
+        {
+            int formatIndex = w->getComboBoxComponent ("format")->getSelectedItemIndex();
+            int bitDepthIndex = w->getComboBoxComponent ("bitdepth")->getSelectedItemIndex();
+            int srIndex = w->getComboBoxComponent ("samplerate")->getSelectedItemIndex();
+            
+            int bitDepth = 16;
+            if (bitDepthIndex == 1) bitDepth = 24;
+            if (bitDepthIndex == 2) bitDepth = 32;
+            
+            double sr = 44100.0;
+            if (srIndex == 1) sr = 48000.0;
+            if (srIndex == 2) sr = 96000.0;
+            
+            juce::String ext = formatIndex == 0 ? ".wav" : (formatIndex == 1 ? ".aiff" : ".ogg");
+            
+            fileChooser = std::make_unique<juce::FileChooser> ("Save Rendered File...",
+                                                               juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Rendered" + ext),
+                                                               "*" + ext);
+            
+            fileChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles | juce::FileBrowserComponent::warnAboutOverwriting,
+                                      [this, formatIndex, bitDepth, sr] (const juce::FileChooser& chooser)
+            {
+                auto fileResult = chooser.getResult();
+                if (fileResult != juce::File{})
+                {
+                    renderToFile (fileResult, formatIndex, bitDepth, sr);
+                }
+            });
+        }
+    }));
+}
+
+void MainComponent::renderToFile (juce::File file, int formatIndex, int bitDepth, double sampleRate)
+{
+    audioEngine.setPlaying (false);
+    audioEngine.getDeviceManager().removeAudioCallback (&audioEngine);
+    
+    juce::WavAudioFormat wavFormat;
+    juce::AiffAudioFormat aiffFormat;
+    juce::OggVorbisAudioFormat oggFormat;
+    
+    juce::AudioFormat* format = &wavFormat;
+    if (formatIndex == 1) format = &aiffFormat;
+    if (formatIndex == 2) format = &oggFormat;
+    
+    std::unique_ptr<juce::AudioFormatWriter> writer (format->createWriterFor (new juce::FileOutputStream (file), sampleRate, 2, bitDepth, {}, 0));
+    
+    if (writer != nullptr)
+    {
+        double projectLengthSecs = 0.0;
+        for (int i = 0; i < audioEngine.getNumTracks(); ++i)
+        {
+            if (auto* t = audioEngine.getTrack(i))
+            {
+                for (const auto& item : t->getItems())
+                {
+                    if (item->getStartTime() + item->getLength() > projectLengthSecs)
+                        projectLengthSecs = item->getStartTime() + item->getLength();
+                }
+            }
+        }
+        
+        if (projectLengthSecs == 0.0) projectLengthSecs = 1.0;
+        
+        int totalSamples = (int)(projectLengthSecs * sampleRate);
+        int blockSize = 512;
+        
+        juce::AudioBuffer<float> buffer (2, blockSize);
+        juce::AudioIODeviceCallbackContext context {};
+        
+        audioEngine.setPlayPosition (0.0);
+        audioEngine.setPlaying (true);
+        
+        for (int i = 0; i < totalSamples; i += blockSize)
+        {
+            int numSamples = juce::jmin (blockSize, totalSamples - i);
+            buffer.clear();
+            
+            float* outChannels[2] = { buffer.getWritePointer(0), buffer.getWritePointer(1) };
+            
+            audioEngine.audioDeviceIOCallbackWithContext (nullptr, 0, outChannels, 2, numSamples, context);
+            
+            writer->writeFromAudioSampleBuffer (buffer, 0, numSamples);
+        }
+        
+        audioEngine.setPlaying (false);
+        audioEngine.setPlayPosition (0.0);
+    }
+    
+    audioEngine.getDeviceManager().addAudioCallback (&audioEngine);
+}
