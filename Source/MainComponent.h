@@ -826,6 +826,10 @@ public:
     
     void setCurrentTool (EditTool tool) { currentTool = tool; }
     EditTool getCurrentTool() const { return currentTool; }
+
+    enum class EditMode { Slip, Grid, Spot, Shuffle };
+    void setCurrentMode (EditMode mode) { currentMode = mode; }
+    EditMode getCurrentMode() const { return currentMode; }
     
     void deleteItem (ItemComponent* comp)
     {
@@ -2278,6 +2282,7 @@ public:
 
 private:
     EditTool currentTool = EditTool::Select;
+    EditMode currentMode = EditMode::Slip;
     AudioEngine& audioEngine;
     juce::Component headersContainer;
     juce::Component timelineContainer;
@@ -2360,7 +2365,7 @@ public:
         : DocumentWindow (name, juce::Colour (0xff121214), DocumentWindow::allButtons), mainComp(owner)
     {
         setContentNonOwned (content, false);
-        setUsingNativeTitleBar (false);
+        setUsingNativeTitleBar (true);
         setResizable (true, false);
         
         if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay())
@@ -3119,6 +3124,10 @@ private:
     TransportButton splitToolBtn { TransportButton::IconType::Split };
     TransportButton eraserToolBtn { TransportButton::IconType::Eraser };
     TransportButton muteToolBtn { TransportButton::IconType::MuteTool };
+    juce::TextButton slipModeBtn { "Slip" };
+    juce::TextButton gridModeBtn { "Grid" };
+    juce::TextButton spotModeBtn { "Spot" };
+    juce::TextButton shuffleModeBtn { "Shuffle" };
     TransportButton undoBtn { TransportButton::IconType::Undo };
     TransportButton redoBtn { TransportButton::IconType::Redo };
     ProjectUndoManager undoManager { audioEngine };
@@ -3160,6 +3169,8 @@ private:
 
     std::unique_ptr<juce::FileChooser> fileChooser;
     juce::Array<juce::File> systemPluginFiles;
+    juce::String customPluginPath;
+    juce::ApplicationProperties appProperties;
 
     void scanSystemPlugins();
     void loadWav(bool atPlayhead = false);

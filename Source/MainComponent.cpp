@@ -6,8 +6,20 @@ void ItemComponent::mouseUp (const juce::MouseEvent& e)
     {
         if (arrangement)
         {
+            if (arrangement->getCurrentMode() == ArrangementComponent::EditMode::Spot)
+            {
+                juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon,
+                    "Spot Mode", "Spot dialog to be implemented fully. Snapping to Playhead.", "OK");
+                
+                double playheadTime = arrangement->getAudioEngine().getPlayPosition();
+                item->setStartTime(playheadTime);
+                setBounds ((int)(playheadTime * pixelsPerSecond) - (int)arrangement->getScrollX(), getY(), getWidth(), getHeight());
+            }
+
+            int savedTrackIdx = currentTrackIdx;
             arrangement->handleItemDragEnd (this);
-            if (auto* track = arrangement->getAudioEngine().getTrack(currentTrackIdx))
+            // 'this' may be deleted now! Do not access members.
+            if (auto* track = arrangement->getAudioEngine().getTrack(savedTrackIdx))
                 track->autoCrossfade();
         }
     }
@@ -45,10 +57,38 @@ void ItemComponent::mouseDrag (const juce::MouseEvent& e)
         dragger.dragComponent (this, e, nullptr);
         if (item)
         {
+            auto mode = arrangement->getCurrentMode();
             double newTime = (getX() + arrangement->getScrollX()) / pixelsPerSecond;
-            double snapInterval = arrangement->getAudioEngine().getSnapIntervalSeconds();
-            if (snapInterval > 0.0)
-                newTime = std::round (newTime / snapInterval) * snapInterval;
+            
+            if (mode == ArrangementComponent::EditMode::Grid)
+            {
+                double snapInterval = arrangement->getAudioEngine().getSnapIntervalSeconds();
+                if (snapInterval > 0.0)
+                    newTime = std::round (newTime / snapInterval) * snapInterval;
+            }
+            else if (mode == ArrangementComponent::EditMode::Shuffle)
+            {
+                if (auto* track = arrangement->getAudioEngine().getTrack(currentTrackIdx))
+                {
+                    double bestDiff = 9999.0;
+                    double bestSnap = newTime;
+                    for (const auto& other : track->getItems())
+                    {
+                        if (other.get() == item) continue;
+                        double end = other->getStartTime() + other->getLength();
+                        double start = other->getStartTime();
+                        
+                        // Snap start to end
+                        if (std::abs(newTime - end) < bestDiff) { bestDiff = std::abs(newTime - end); bestSnap = end; }
+                        // Snap end to start
+                        double myEnd = newTime + item->getLength();
+                        if (std::abs(myEnd - start) < bestDiff) { bestDiff = std::abs(myEnd - start); bestSnap = start - item->getLength(); }
+                    }
+                    if (bestDiff < 15.0 / pixelsPerSecond)
+                        newTime = bestSnap;
+                }
+            }
+            // For Slip and Spot, we leave newTime as is during drag.
             
             newTime = juce::jmax (0.0, newTime);
             item->setStartTime (newTime);
@@ -546,7 +586,7 @@ MainComponent::MainComponent() : mixerResizer (*this)
     virtualKeyboard.setWantsKeyboardFocus (true);
     virtualKeyboard.setMouseClickGrabsKeyboardFocus (true);
     juce::LookAndFeel::setDefaultLookAndFeel (&modernLookAndFeel);
-    setSize (1366, 800);
+    setSize (1920, 1080);
 
     // Setup Top Bar
     addAndMakeVisible (topBar);
@@ -613,10 +653,32 @@ MainComponent::MainComponent() : mixerResizer (*this)
     topBar.addAndMakeVisible (undoBtn);
     topBar.addAndMakeVisible (redoBtn);
 
+    topBar.addAndMakeVisible (slipModeBtn);
+    topBar.addAndMakeVisible (gridModeBtn);
+    topBar.addAndMakeVisible (spotModeBtn);
+    topBar.addAndMakeVisible (shuffleModeBtn);
     selectToolBtn.setRadioGroupId (1001);
     splitToolBtn.setRadioGroupId (1001);
     eraserToolBtn.setRadioGroupId (1001);
     muteToolBtn.setRadioGroupId (1001);
+
+    slipModeBtn.setRadioGroupId (1002);
+    gridModeBtn.setRadioGroupId (1002);
+    spotModeBtn.setRadioGroupId (1002);
+    shuffleModeBtn.setRadioGroupId (1002);
+
+    slipModeBtn.setClickingTogglesState (true);
+    gridModeBtn.setClickingTogglesState (true);
+    spotModeBtn.setClickingTogglesState (true);
+    shuffleModeBtn.setClickingTogglesState (true);
+
+    gridModeBtn.setToggleState (true, juce::dontSendNotification);
+
+    slipModeBtn.onClick = [this] { arrangementView.setCurrentMode(ArrangementComponent::EditMode::Slip); };
+    gridModeBtn.onClick = [this] { arrangementView.setCurrentMode(ArrangementComponent::EditMode::Grid); };
+    spotModeBtn.onClick = [this] { arrangementView.setCurrentMode(ArrangementComponent::EditMode::Spot); };
+    shuffleModeBtn.onClick = [this] { arrangementView.setCurrentMode(ArrangementComponent::EditMode::Shuffle); };
+
 
     selectToolBtn.setClickingTogglesState (true);
     splitToolBtn.setClickingTogglesState (true);
@@ -842,6 +904,16 @@ MainComponent::MainComponent() : mixerResizer (*this)
     {
         mixerWindow = std::make_unique<MixerWindow>("Layerhost Mixer", &mixerViewport, this);
     }
+
+    juce::PropertiesFile::Options options;
+    options.applicationName = "Layerhost";
+    options.filenameSuffix = ".settings";
+    options.osxLibrarySubFolder = "Application Support";
+    options.folderName = "Layerhost";
+    appProperties.setStorageParameters (options);
+    
+    if (auto* props = appProperties.getUserSettings())
+        customPluginPath = props->getValue("customPluginPath");
 
     scanSystemPlugins();
     audioEngine.initialise();
@@ -1120,11 +1192,12 @@ void MainComponent::updateTracksUI()
                     
                     juce::PopupMenu m;
                     m.addItem(1, "Browse File...");
+                    m.addItem(2, "Set System Plugin Folder...");
                     m.addSeparator();
                     
                     for (int k = 0; k < systemPluginFiles.size(); ++k)
                     {
-                        m.addItem(k + 2, systemPluginFiles[k].getFileNameWithoutExtension());
+                        m.addItem(k + 3, systemPluginFiles[k].getFileNameWithoutExtension());
                     }
                     
                     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent(fxBtn),
@@ -1133,9 +1206,29 @@ void MainComponent::updateTracksUI()
                             {
                                 loadVstIntoSlot(tIdx, j);
                             }
-                            else if (result > 1)
+                            else if (result == 2)
                             {
-                                loadPluginFileIntoSlot(systemPluginFiles[result - 2], tIdx, j);
+                                fileChooser = std::make_unique<juce::FileChooser>("Select System Plugin Folder", juce::File{}, "");
+                                fileChooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories | juce::FileBrowserComponent::canSelectFiles,
+                                    [this] (const juce::FileChooser& fc)
+                                    {
+                                        auto file = fc.getResult();
+                                        if (file.isDirectory())
+                                        {
+                                            customPluginPath = file.getFullPathName();
+                                            if (auto* props = appProperties.getUserSettings())
+                                            {
+                                                props->setValue ("customPluginPath", customPluginPath);
+                                                props->saveIfNeeded();
+                                            }
+                                            scanSystemPlugins();
+                                            juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::InfoIcon, "Plugin Path Updated", "Scanned " + customPluginPath + " for plugins.");
+                                        }
+                                    });
+                            }
+                            else if (result > 2)
+                            {
+                                loadPluginFileIntoSlot(systemPluginFiles[result - 3], tIdx, j);
                             }
                         });
                 }
@@ -1179,9 +1272,14 @@ void MainComponent::scanSystemPlugins()
     juce::Array<juce::File> searchPaths = {
         juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile(".vst3"),
         juce::File("/usr/lib/vst3"),
+        juce::File("C:\\Program Files\\Common Files\\VST3"),
         juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile(".clap"),
-        juce::File("/usr/lib/clap")
+        juce::File("/usr/lib/clap"),
+        juce::File("C:\\Program Files\\Common Files\\CLAP")
     };
+    
+    if (customPluginPath.isNotEmpty())
+        searchPaths.add (juce::File (customPluginPath));
     
     for (const auto& dir : searchPaths)
     {
@@ -1420,6 +1518,13 @@ void MainComponent::resized()
     eraserToolBtn.setBounds (tb.removeFromLeft (40));
     tb.removeFromLeft (5);
     muteToolBtn.setBounds (tb.removeFromLeft (40));
+    
+    tb.removeFromLeft(10); // spacer
+    slipModeBtn.setBounds (tb.removeFromLeft(50));
+    gridModeBtn.setBounds (tb.removeFromLeft(50));
+    spotModeBtn.setBounds (tb.removeFromLeft(50));
+    shuffleModeBtn.setBounds (tb.removeFromLeft(60));
+    tb.removeFromLeft(10); // spacer
     tb.removeFromLeft (15);
     
     undoBtn.setBounds (tb.removeFromLeft (40));
