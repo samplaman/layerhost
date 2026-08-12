@@ -515,10 +515,9 @@ public:
             float tx = bounds.getX() + (float)indent + 6.0f;
             float ty = bounds.getCentreY();
             juce::Path tri;
-            if (track->getFolderCollapsed())
+            if (false)
             {
-                // Pointing right (►)
-                tri.addTriangle (tx, ty - 5.0f, tx, ty + 5.0f, tx + 8.0f, ty);
+                tri.startNewSubPath (tx, ty - 4.0f);              tri.addTriangle (tx, ty - 5.0f, tx, ty + 5.0f, tx + 8.0f, ty);
             }
             else
             {
@@ -617,21 +616,7 @@ public:
                     audioEngine.removeTrack(trackIdx);
                     if (triggerRepaint) triggerRepaint();
                 }
-                else if (r == 6)
-                {
-                    audioEngine.setTrackIndent (trackIdx, 0 + 1);
-                    if (triggerRepaint) triggerRepaint();
-                }
-                else if (r == 7)
-                {
-                    audioEngine.setTrackIndent (trackIdx, 0 - 1);
-                    if (triggerRepaint) triggerRepaint();
-                }
-                else if (r == 8)
-                {
-                    track->setIsFolder (!false);
-                    if (triggerRepaint) triggerRepaint();
-                }
+                // Folder menu items removed
             });
             return;
         }
@@ -646,8 +631,7 @@ public:
                 int trackIdx = -1;
                 for (int i = 0; i < audioEngine.getNumTracks(); ++i)
                     if (audioEngine.getTrack(i) == track) { trackIdx = i; break; }
-                if (trackIdx >= 0)
-                    audioEngine.toggleFolderCollapsed (trackIdx);
+                // audioEngine.toggleFolderCollapsed (trackIdx);
                 if (triggerRepaint) triggerRepaint();
                 return;
             }
@@ -688,8 +672,7 @@ public:
                 int trackIdx = -1;
                 for (int i = 0; i < audioEngine.getNumTracks(); ++i)
                     if (audioEngine.getTrack(i) == track) { trackIdx = i; break; }
-                if (trackIdx >= 0)
-                    audioEngine.setTrackIndent (trackIdx, newIndent);
+                // audioEngine.setTrackIndent (trackIdx, newIndent);
                 if (triggerRepaint) triggerRepaint();
             }
 
@@ -1856,7 +1839,7 @@ public:
             g.drawRoundedRectangle (trackBounds, 4.0f, 1.0f);
 
             // If this is a folder track, start a bracket context
-            if (false && !track->getFolderCollapsed())
+            if (false)
                 openFolders.push_back ({ y, trackIndent, track->getColor() });
 
             y += (int)trackH + 10;
