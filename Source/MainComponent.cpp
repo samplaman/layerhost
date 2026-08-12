@@ -1593,12 +1593,14 @@ void MainComponent::layoutMixer()
         mixerInputComboBoxes[masterIdx]->setBounds (strip.removeFromBottom (24).reduced(2));
         mixerPanSliders[masterIdx]->setBounds (strip.removeFromTop (20).reduced(5, 2));
         
-        auto msStrip = strip.removeFromTop (20);
-        int btnW = stripWidth / 4;
-        mixerMuteButtons[masterIdx]->setBounds (msStrip.removeFromLeft (btnW).reduced(2));
-        mixerSoloButtons[masterIdx]->setBounds (msStrip.removeFromLeft (btnW).reduced(2));
-        mixerArmButtons[masterIdx]->setBounds (msStrip.removeFromLeft (btnW).reduced(2));
-        mixerMonitorButtons[masterIdx]->setBounds (msStrip.reduced(2));
+        auto msStrip = strip.removeFromTop (44);
+        auto topRow = msStrip.removeFromTop(22);
+        auto botRow = msStrip;
+        int btnW = stripWidth / 2;
+        mixerMuteButtons[masterIdx]->setBounds (topRow.removeFromLeft (btnW).reduced(2));
+        mixerSoloButtons[masterIdx]->setBounds (topRow.reduced(2));
+        mixerArmButtons[masterIdx]->setBounds (botRow.removeFromLeft (btnW).reduced(2));
+        mixerMonitorButtons[masterIdx]->setBounds (botRow.reduced(2));
         
         for (int j = 0; j < 8; ++j)
         {
@@ -1635,12 +1637,14 @@ void MainComponent::layoutMixer()
         mixerPanSliders[i]->setBounds (strip.removeFromTop (20).reduced(5, 2));
         
         // Mute / Solo / Arm / Mon
-        auto msStrip = strip.removeFromTop (20);
-        int btnW = stripWidth / 4;
-        mixerMuteButtons[i]->setBounds (msStrip.removeFromLeft (btnW).reduced(2));
-        mixerSoloButtons[i]->setBounds (msStrip.removeFromLeft (btnW).reduced(2));
-        mixerArmButtons[i]->setBounds (msStrip.removeFromLeft (btnW).reduced(2));
-        mixerMonitorButtons[i]->setBounds (msStrip.reduced(2));
+        auto msStrip = strip.removeFromTop (44);
+        auto topRow = msStrip.removeFromTop(22);
+        auto botRow = msStrip;
+        int btnW = stripWidth / 2;
+        mixerMuteButtons[i]->setBounds (topRow.removeFromLeft (btnW).reduced(2));
+        mixerSoloButtons[i]->setBounds (topRow.reduced(2));
+        mixerArmButtons[i]->setBounds (botRow.removeFromLeft (btnW).reduced(2));
+        mixerMonitorButtons[i]->setBounds (botRow.reduced(2));
         
         // FX Slots
         for (int j = 0; j < 8; ++j)
