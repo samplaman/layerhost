@@ -161,6 +161,7 @@ public:
     
     void mouseDoubleClick (const juce::MouseEvent& e) override;
     void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseMove (const juce::MouseEvent& e) override;
 
     void mouseUp (const juce::MouseEvent& e) override;
 
@@ -186,7 +187,7 @@ private:
     ArrangementComponent* arrangement;
     juce::ComponentDragger dragger;
 
-    enum class DragMode { Move, TrimLeft, TrimRight, StretchLeft, StretchRight, None };
+    enum class DragMode { Move, TrimLeft, TrimRight, StretchLeft, StretchRight, FadeIn, FadeOut, None };
     DragMode dragMode = DragMode::None;
     bool hasSavedUndoForCurrentDrag = false;
     double dragStartLength = 0.0;

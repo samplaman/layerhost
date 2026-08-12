@@ -168,6 +168,39 @@ void ItemComponent::mouseDrag (const juce::MouseEvent& e)
             }
         }
     }
+    else if (dragMode == DragMode::FadeIn)
+    {
+        if (item)
+        {
+            double fadeLength = (double)e.getEventRelativeTo(this).position.x / pixelsPerSecond;
+            fadeLength = juce::jlimit (0.0, item->getLength(), fadeLength);
+            item->setFadeIn (fadeLength);
+            repaint();
+        }
+    }
+    else if (dragMode == DragMode::FadeOut)
+    {
+        if (item)
+        {
+            double fadeLength = (double)(getWidth() - e.getEventRelativeTo(this).position.x) / pixelsPerSecond;
+            fadeLength = juce::jlimit (0.0, item->getLength(), fadeLength);
+            item->setFadeOut (fadeLength);
+            repaint();
+        }
+    }
+}
+
+void ItemComponent::mouseMove (const juce::MouseEvent& e)
+{
+    bool isTopLeftClick = (e.position.x <= 15.0f && e.position.y <= 15.0f);
+    bool isTopRightClick = (e.position.x >= getWidth() - 15.0f && e.position.y <= 15.0f);
+
+    if (isTopLeftClick || isTopRightClick)
+        setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+    else if (e.position.x <= 5.0f || e.position.x >= getWidth() - 5.0f)
+        setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+    else
+        setMouseCursor (juce::MouseCursor::NormalCursor);
 }
 
 void ArrangementComponent::filesDropped (const juce::StringArray& files, int x, int y)
@@ -333,9 +366,16 @@ void ItemComponent::paint (juce::Graphics& g)
             g.setColour (trackCol);
             g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(0.5f), 4.0f, 1.0f);
 
+            // Draw selection/trim handles
             g.setColour (trackCol.darker());
             g.fillRect (0, 0, 4, getHeight());
             g.fillRect (getWidth() - 4, 0, 4, getHeight());
+            
+            // Draw fade handles (top corners)
+            g.setColour (juce::Colours::white.withAlpha(0.6f));
+            g.fillPath ([] { juce::Path p; p.addTriangle(0, 0, 10, 0, 0, 10); return p; }());
+            g.fillPath ([this] { juce::Path p; p.addTriangle(getWidth(), 0, getWidth() - 10, 0, getWidth(), 10); return p; }());
+
             const auto& buf = item->getBuffer();
             if (buf.getNumChannels() > 0 && buf.getNumSamples() > 0)
             {
@@ -349,7 +389,7 @@ void ItemComponent::paint (juce::Graphics& g)
                 int startSample = (int)(item->getSourceOffset() * pbRate * 44100.0);
                 int endSample = startSample + (int)(item->getLength() * pbRate * 44100.0);
                 
-                if (startSample >= 0 && startSample < numSamplesTotal && getWidth() > 0)
+                if (startSample >= 0 && getWidth() > 0)
                 {
                     juce::Path visibleWaveformPath;
                     float step = (endSample - startSample) / (float)getWidth();
@@ -360,29 +400,21 @@ void ItemComponent::paint (juce::Graphics& g)
                         int sStart = startSample + (int)(i * step);
                         int sEnd = startSample + (int)((i + 1) * step);
                         
-                        if (sStart >= numSamplesTotal)
-                            break;
-                            
-                        sStart = juce::jlimit (0, numSamplesTotal - 1, sStart);
-                        sEnd = juce::jlimit (0, numSamplesTotal - 1, sEnd);
-                        
                         float minVal = 1.0f;
                         float maxVal = -1.0f;
                         
-                        if (sEnd > sStart)
+                        int samplesInPixel = juce::jmax(1, (int)step);
+                        int skip = juce::jmax(1, samplesInPixel / 100);
+                        
+                        for (int s = 0; s < samplesInPixel; s += skip)
                         {
-                            int skip = juce::jmax(1, (sEnd - sStart) / 100);
-                            for (int s = sStart; s < sEnd; s += skip)
-                            {
-                                float v = readPtr[s];
-                                if (v < minVal) minVal = v;
-                                if (v > maxVal) maxVal = v;
-                            }
+                            int sampleIdx = (sStart + s) % numSamplesTotal;
+                            float v = readPtr[sampleIdx];
+                            if (v < minVal) minVal = v;
+                            if (v > maxVal) maxVal = v;
                         }
-                        else
-                        {
-                            minVal = maxVal = readPtr[sStart];
-                        }
+                        
+                        if (minVal > maxVal) minVal = maxVal = 0.0f;
                         
                         float yMin = juce::jmap (maxVal, -1.0f, 1.0f, (float)getHeight(), 0.0f);
                         float yMax = juce::jmap (minVal, -1.0f, 1.0f, (float)getHeight(), 0.0f);
@@ -395,6 +427,32 @@ void ItemComponent::paint (juce::Graphics& g)
                     g.setColour (juce::Colour (0xffe2e2e6));
                     g.strokePath (visibleWaveformPath, juce::PathStrokeType(1.2f, juce::PathStrokeType::curved));
                 }
+            }
+
+            // Draw fade-in overlay
+            if (item->getFadeIn() > 0.0)
+            {
+                int fadeWidth = (int)(item->getFadeIn() * pixelsPerSecond);
+                juce::Path p;
+                p.startNewSubPath(0.0f, (float)getHeight());
+                p.quadraticTo((float)fadeWidth / 2.0f, 0.0f, (float)fadeWidth, 0.0f);
+                p.lineTo((float)fadeWidth, (float)getHeight());
+                p.closeSubPath();
+                g.setColour(juce::Colours::black.withAlpha(0.5f));
+                g.fillPath(p);
+            }
+
+            // Draw fade-out overlay
+            if (item->getFadeOut() > 0.0)
+            {
+                int fadeWidth = (int)(item->getFadeOut() * pixelsPerSecond);
+                juce::Path p;
+                p.startNewSubPath((float)getWidth(), (float)getHeight());
+                p.quadraticTo((float)(getWidth() - fadeWidth / 2.0f), 0.0f, (float)(getWidth() - fadeWidth), 0.0f);
+                p.lineTo((float)(getWidth() - fadeWidth), (float)getHeight());
+                p.closeSubPath();
+                g.setColour(juce::Colours::black.withAlpha(0.5f));
+                g.fillPath(p);
             }
         }
         else if (item->getType() == Item::Type::Midi)
@@ -571,7 +629,14 @@ void ItemComponent::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    if (e.position.x <= 5.0f)
+    bool isTopLeftClick = (e.position.x <= 15.0f && e.position.y <= 15.0f);
+    bool isTopRightClick = (e.position.x >= getWidth() - 15.0f && e.position.y <= 15.0f);
+
+    if (isTopLeftClick)
+        dragMode = DragMode::FadeIn;
+    else if (isTopRightClick)
+        dragMode = DragMode::FadeOut;
+    else if (e.position.x <= 5.0f)
         dragMode = e.mods.isAltDown() ? DragMode::StretchLeft : DragMode::TrimLeft;
     else if (e.position.x >= getWidth() - 5.0f)
         dragMode = e.mods.isAltDown() ? DragMode::StretchRight : DragMode::TrimRight;
