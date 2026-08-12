@@ -673,6 +673,7 @@ MainComponent::MainComponent() : mixerResizer (*this)
     shuffleModeBtn.setClickingTogglesState (true);
 
     gridModeBtn.setToggleState (true, juce::dontSendNotification);
+    arrangementView.setCurrentMode(ArrangementComponent::EditMode::Grid);
 
     slipModeBtn.onClick = [this] { arrangementView.setCurrentMode(ArrangementComponent::EditMode::Slip); };
     gridModeBtn.onClick = [this] { arrangementView.setCurrentMode(ArrangementComponent::EditMode::Grid); };
