@@ -2336,6 +2336,8 @@ public:
         delete this;
     }
 
+    juce::AudioProcessor* getProcessor() const { return processor; }
+
 private:
     juce::AudioProcessor* processor;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginWindow)

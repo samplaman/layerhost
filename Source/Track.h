@@ -362,7 +362,8 @@ public:
                     }
                 }
                 
-                fx->processBlock (preRenderBuffer, preRenderMidi);
+                if (!fx->isSuspended())
+                    fx->processBlock (preRenderBuffer, preRenderMidi);
             }
         }
 
@@ -612,7 +613,8 @@ public:
                     }
                 }
                 
-                fx->processBlock (buffer, midiMessages);
+                if (!fx->isSuspended())
+                    fx->processBlock (buffer, midiMessages);
             }
         }
 

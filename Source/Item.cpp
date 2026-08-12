@@ -146,35 +146,37 @@ void Item::process (juce::AudioBuffer<float>& buffer, double playheadPositionSec
     int numSamplesToCopy = endSampleInBlock - startSampleInBlock;
     if (numSamplesToCopy <= 0) return;
     
-    if (readOffset + numSamplesToCopy > audioData.getNumSamples())
-    {
-        numSamplesToCopy = audioData.getNumSamples() - readOffset;
-    }
+    int sourceLength = audioData.getNumSamples();
+    if (sourceLength == 0) return;
 
-    if (numSamplesToCopy > 0)
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
     {
-        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        int sourceChannel = juce::jmin (channel, audioData.getNumChannels() - 1);
+        
+        if (playbackRate == 1.0)
         {
-            int sourceChannel = juce::jmin (channel, audioData.getNumChannels() - 1);
-            
-            if (playbackRate == 1.0)
+            int totalCopied = 0;
+            while (totalCopied < numSamplesToCopy)
             {
+                int currentReadOffset = (readOffset + totalCopied) % sourceLength;
+                if (currentReadOffset < 0) currentReadOffset += sourceLength;
+                
+                int chunk = juce::jmin(numSamplesToCopy - totalCopied, sourceLength - currentReadOffset);
+                
                 if (fadeInDuration <= 0.0 && fadeOutDuration <= 0.0)
                 {
-                    buffer.addFrom (channel, startSampleInBlock, audioData, sourceChannel, readOffset, numSamplesToCopy);
+                    buffer.addFrom (channel, startSampleInBlock + totalCopied, audioData, sourceChannel, currentReadOffset, chunk);
                 }
                 else
                 {
-                    const float* src = audioData.getReadPointer(sourceChannel, readOffset);
-                    float* dst = buffer.getWritePointer(channel, startSampleInBlock);
-                    
-                    for (int i = 0; i < numSamplesToCopy; ++i)
+                    const float* src = audioData.getReadPointer(sourceChannel, currentReadOffset);
+                    float* dst = buffer.getWritePointer(channel, startSampleInBlock + totalCopied);
+                    for (int i = 0; i < chunk; ++i)
                     {
-                        double currentSampleTime = blockStartTime + ((startSampleInBlock + i) / targetSampleRate);
+                        double currentSampleTime = blockStartTime + ((startSampleInBlock + totalCopied + i) / targetSampleRate);
                         double itemRelTime = currentSampleTime - startTime;
                         
                         float gain = 1.0f;
-                        
                         if (fadeInDuration > 0.0 && itemRelTime < fadeInDuration)
                         {
                             gain = (float)(itemRelTime / fadeInDuration);
@@ -189,36 +191,45 @@ void Item::process (juce::AudioBuffer<float>& buffer, double playheadPositionSec
                         dst[i] += src[i] * gain;
                     }
                 }
+                totalCopied += chunk;
             }
-            else
+        }
+        else
+        {
+            // For pitch shifted items, we process sample-by-sample or use the resampler.
+            // Since resampler requires contiguous memory, we'll manually copy a wrapped chunk into a temp buffer.
+            int chResampler = juce::jmin(channel, 1);
+            int totalCopied = 0;
+            
+            while (totalCopied < numSamplesToCopy)
             {
-                // Playback rate time-stretching/pitch-shifting using LagrangeInterpolator
-                int chResampler = juce::jmin(channel, 1);
-                int actualReadOffset = juce::roundToInt(readOffset * playbackRate);
-                int samplesAvailable = audioData.getNumSamples() - actualReadOffset;
+                int actualReadOffset = juce::roundToInt((readOffset + totalCopied) * playbackRate) % sourceLength;
+                if (actualReadOffset < 0) actualReadOffset += sourceLength;
                 
-                if (samplesAvailable > 0)
+                int chunk = juce::jmin(numSamplesToCopy - totalCopied, juce::roundToInt((sourceLength - actualReadOffset) / playbackRate));
+                if (chunk <= 0) chunk = 1;
+                chunk = juce::jmin(chunk, numSamplesToCopy - totalCopied);
+                
+                float* dst = buffer.getWritePointer(channel, startSampleInBlock + totalCopied);
+                resamplers[chResampler].process(playbackRate, audioData.getReadPointer(sourceChannel, actualReadOffset), dst, chunk);
+                
+                if (fadeInDuration > 0.0 || fadeOutDuration > 0.0)
                 {
-                    float* dst = buffer.getWritePointer(channel, startSampleInBlock);
-                    resamplers[chResampler].process(playbackRate, audioData.getReadPointer(sourceChannel, actualReadOffset), dst, numSamplesToCopy);
-                    
-                    if (fadeInDuration > 0.0 || fadeOutDuration > 0.0)
+                    for (int i = 0; i < chunk; ++i)
                     {
-                        for (int i = 0; i < numSamplesToCopy; ++i)
-                        {
-                            double currentSampleTime = blockStartTime + ((startSampleInBlock + i) / targetSampleRate);
-                            double itemRelTime = currentSampleTime - startTime;
+                        double currentSampleTime = blockStartTime + ((startSampleInBlock + totalCopied + i) / targetSampleRate);
+                        double itemRelTime = currentSampleTime - startTime;
+                        
+                        float gain = 1.0f;
+                        if (fadeInDuration > 0.0 && itemRelTime < fadeInDuration)
+                            gain = (float)(juce::jmax(0.0, itemRelTime / fadeInDuration));
+                        else if (fadeOutDuration > 0.0 && itemRelTime > (length - fadeOutDuration))
+                            gain = (float)(juce::jmax(0.0, (length - itemRelTime) / fadeOutDuration));
                             
-                            float gain = 1.0f;
-                            if (fadeInDuration > 0.0 && itemRelTime < fadeInDuration)
-                                gain = (float)(juce::jmax(0.0, itemRelTime / fadeInDuration));
-                            else if (fadeOutDuration > 0.0 && itemRelTime > (length - fadeOutDuration))
-                                gain = (float)(juce::jmax(0.0, (length - itemRelTime) / fadeOutDuration));
-                                
-                            dst[i] *= gain;
-                        }
+                        dst[i] *= gain;
                     }
                 }
+                totalCopied += chunk;
             }
         }
     }
@@ -237,17 +248,36 @@ void Item::processMidi (juce::MidiBuffer& midiMessages, double playheadPositionS
     if (blockEndTime < startTime || blockStartTime > itemEndTime)
         return;
 
+    double originalSequenceLength = 0.0;
+    for (int i = 0; i < midiSequence.getNumEvents(); ++i)
+    {
+        double ts = midiSequence.getEventPointer(i)->message.getTimeStamp();
+        if (ts > originalSequenceLength) originalSequenceLength = ts;
+    }
+    if (originalSequenceLength <= 0.01) originalSequenceLength = length;
+
     for (int i = 0; i < midiSequence.getNumEvents(); ++i)
     {
         auto* ev = midiSequence.getEventPointer (i);
-        // Time stamps are assumed to be in seconds relative to item start
-        double eventTimeGlobal = startTime + ev->message.getTimeStamp();
+        double eventTimeLocal = ev->message.getTimeStamp();
         
-        if (eventTimeGlobal >= blockStartTime && eventTimeGlobal < blockEndTime)
+        int iteration = 0;
+        while (true)
         {
-            int sampleOffset = juce::roundToInt ((eventTimeGlobal - blockStartTime) * targetSampleRate);
-            sampleOffset = juce::jlimit (0, numSamples - 1, sampleOffset);
-            midiMessages.addEvent (ev->message, sampleOffset);
+            double eventTimeGlobal = startTime + eventTimeLocal + (iteration * originalSequenceLength);
+            
+            if (eventTimeGlobal >= itemEndTime) break; // Past item bounds
+            
+            if (eventTimeGlobal >= blockStartTime && eventTimeGlobal < blockEndTime)
+            {
+                int sampleOffset = juce::roundToInt ((eventTimeGlobal - blockStartTime) * targetSampleRate);
+                sampleOffset = juce::jlimit (0, numSamples - 1, sampleOffset);
+                midiMessages.addEvent (ev->message, sampleOffset);
+            }
+            
+            if (eventTimeGlobal >= blockEndTime) break; // Past current block
+            
+            iteration++;
         }
     }
 }

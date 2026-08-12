@@ -1189,14 +1189,40 @@ void MainComponent::updateTracksUI()
         {
             auto* plugin = track->getPlugin(j);
             auto* fxBtn = mixerFxSlots.add (new juce::TextButton());
-            fxBtn->setButtonText(plugin != nullptr ? plugin->getName() : "+");
+            if (plugin != nullptr)
+                fxBtn->setButtonText(plugin->getName() + (plugin->isSuspended() ? " (Bypassed)" : ""));
+            else
+                fxBtn->setButtonText("+");
             
             fxBtn->setColour(juce::TextButton::buttonColourId, juce::Colour (0xff242428));
             fxBtn->setColour(juce::TextButton::textColourOffId, juce::Colour (0xffe2e2e6));
             
-            fxBtn->onClick = [this, fxBtn, j, plugin, isMaster, i]() {
+            fxBtn->onClick = [this, fxBtn, j, track, plugin, isMaster, i]() {
                 if (plugin != nullptr) {
-                    new PluginWindow(plugin);
+                    juce::PopupMenu m;
+                    m.addItem(1, "Open Editor");
+                    m.addItem(2, plugin->isSuspended() ? "Unbypass" : "Bypass");
+                    m.addSeparator();
+                    m.addItem(3, "Remove Plugin");
+
+                    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent(fxBtn),
+                        [this, track, j, plugin](int result) {
+                            if (result == 1) {
+                                new PluginWindow(plugin);
+                            } else if (result == 2) {
+                                plugin->suspendProcessing(!plugin->isSuspended());
+                                updateTracksUI();
+                            } else if (result == 3) {
+                                for (int i = juce::TopLevelWindow::getNumTopLevelWindows(); --i >= 0;)
+                                {
+                                    if (auto* pw = dynamic_cast<PluginWindow*> (juce::TopLevelWindow::getTopLevelWindow (i)))
+                                        if (pw->getProcessor() == plugin)
+                                            delete pw;
+                                }
+                                track->setPlugin(j, nullptr);
+                                updateTracksUI();
+                            }
+                        });
                 } else {
                     int tIdx = isMaster ? audioEngine.getNumTracks() : i;
                     
