@@ -1,6 +1,15 @@
 #include <JuceHeader.h>
 #include "MainComponent.h"
 
+#if JUCE_WINDOWS
+ #include <windows.h>
+ #include <dwmapi.h>
+ #pragma comment(lib, "dwmapi.lib")
+ #ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+  #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+ #endif
+#endif
+
 class LayerHostApplication  : public juce::JUCEApplication
 {
 public:
@@ -71,6 +80,27 @@ public:
            #endif
 
             setVisible (true);
+
+           #if JUCE_WINDOWS
+            if (auto* hwnd = (HWND) getWindowHandle())
+            {
+                BOOL useDarkMode = TRUE;
+                DWORD appsUseLightTheme = 0;
+                DWORD dataSize = sizeof(appsUseLightTheme);
+                HKEY hKey;
+                if (RegOpenKeyExA(HKEY_CURRENT_USER, "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize", 0, KEY_READ, &hKey) == ERROR_SUCCESS)
+                {
+                    if (RegQueryValueExA(hKey, "AppsUseLightTheme", nullptr, nullptr, (LPBYTE)&appsUseLightTheme, &dataSize) == ERROR_SUCCESS)
+                    {
+                        useDarkMode = (appsUseLightTheme == 0);
+                    }
+                    RegCloseKey(hKey);
+                }
+                
+                ::DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &useDarkMode, sizeof(useDarkMode));
+                SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+            }
+           #endif
         }
 
         void closeButtonPressed() override

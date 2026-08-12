@@ -230,7 +230,7 @@ public:
         colorBtn.setColour (juce::TextButton::buttonColourId, track->getColor());
         colorBtn.onClick = [this] {
             juce::PopupMenu m;
-            m.addItem(1, "Red"); m.addItem(2, "Green"); m.addItem(3, "Blue"); m.addItem(4, "Yellow"); m.addItem(5, "Purple"); m.addItem(6, "Cyan"); m.addItem(7, "Orange");
+            m.addItem(1, "Red"); m.addItem(2, "Green"); m.addItem(3, "Blue"); m.addItem(4, "Yellow"); m.addItem(5, "Purple"); 
             m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&colorBtn), [this](int r) {
                 if (r == 1) track->setColor(juce::Colour(0xffe53935));
                 else if (r == 2) track->setColor(juce::Colour(0xff43a047));
@@ -414,11 +414,11 @@ public:
         auto r = getLocalBounds().reduced (2);
         
         // Indent for nesting
-        int indent = track->getIndentLevel() * 14;
+        int indent = 0;
         r.removeFromLeft (indent);
         
         // Collapse triangle for folder tracks (left-most 16px after indent)
-        if (track->getIsFolder())
+        if (false)
             r.removeFromLeft (16);
         else
             r.removeFromLeft (12); // drag-handle gap for non-folders
@@ -481,10 +481,10 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto bounds = getLocalBounds().toFloat().reduced (2.0f);
-        int indent = track->getIndentLevel() * 14;
+        int indent = 0;
 
         // Background — folder tracks get a slightly different tint
-        if (track->getIsFolder())
+        if (false)
             g.setColour (juce::Colour (0xff1e1e26));
         else
             g.setColour (juce::Colour (0xff1a1a1e));
@@ -510,7 +510,7 @@ public:
         g.drawRoundedRectangle (bounds, 4.0f, isDropTarget ? 2.0f : 1.0f);
 
         // Collapse triangle for folder tracks
-        if (track->getIsFolder())
+        if (false)
         {
             float tx = bounds.getX() + (float)indent + 6.0f;
             float ty = bounds.getCentreY();
@@ -573,9 +573,9 @@ public:
             m.addItem(3, "Rename Track");
             m.addItem(4, "Duplicate Track");
             m.addSeparator();
-            m.addItem(6, "Indent (nest deeper)", trackIdx > 0);
-            m.addItem(7, "Unindent (move out)", track->getIndentLevel() > 0);
-            m.addItem(8, track->getIsFolder() ? "Remove Folder" : "Make Folder Track");
+            
+            
+            
             m.addSeparator();
             m.addItem(5, "Delete Track");
             
@@ -619,17 +619,17 @@ public:
                 }
                 else if (r == 6)
                 {
-                    audioEngine.setTrackIndent (trackIdx, track->getIndentLevel() + 1);
+                    audioEngine.setTrackIndent (trackIdx, 0 + 1);
                     if (triggerRepaint) triggerRepaint();
                 }
                 else if (r == 7)
                 {
-                    audioEngine.setTrackIndent (trackIdx, track->getIndentLevel() - 1);
+                    audioEngine.setTrackIndent (trackIdx, 0 - 1);
                     if (triggerRepaint) triggerRepaint();
                 }
                 else if (r == 8)
                 {
-                    track->setIsFolder (!track->getIsFolder());
+                    track->setIsFolder (!false);
                     if (triggerRepaint) triggerRepaint();
                 }
             });
@@ -637,9 +637,9 @@ public:
         }
 
         // Click on collapse triangle
-        if (track->getIsFolder())
+        if (false)
         {
-            int indent = track->getIndentLevel() * 14;
+            int indent = 0;
             juce::Rectangle<int> triHitbox (indent + 2, 0, 20, getHeight());
             if (triHitbox.contains (e.x, e.y))
             {
@@ -664,7 +664,7 @@ public:
             // Dragging from anywhere else initiates track reorder
             isDraggingTrack = true;
             dragStartX = e.x;
-            dragIndentLevel = track->getIndentLevel();
+            dragIndentLevel = 0;
         }
     }
 
@@ -683,7 +683,7 @@ public:
             int horizDelta = e.getDistanceFromDragStartX();
             int newIndent = dragIndentLevel + horizDelta / 22;
             newIndent = juce::jlimit (0, 8, newIndent);
-            if (newIndent != track->getIndentLevel())
+            if (newIndent != 0)
             {
                 int trackIdx = -1;
                 for (int i = 0; i < audioEngine.getNumTracks(); ++i)
@@ -1804,7 +1804,7 @@ public:
             if (!audioEngine.isTrackVisible (i))
                 continue;
 
-            int trackIndent = track->getIndentLevel();
+            int trackIndent = 0;
             float indentPx = (float)(trackIndent * 14);
 
             // Close any open folders whose level >= this track's level
@@ -1830,7 +1830,7 @@ public:
                                                 trackH);
             
             // Folder track: lighter header bar
-            if (track->getIsFolder())
+            if (false)
             {
                 if (i == selectedTrackIdx)
                     g.setColour (juce::Colour (0xff2a2a3a));
@@ -1856,7 +1856,7 @@ public:
             g.drawRoundedRectangle (trackBounds, 4.0f, 1.0f);
 
             // If this is a folder track, start a bracket context
-            if (track->getIsFolder() && !track->getFolderCollapsed())
+            if (false && !track->getFolderCollapsed())
                 openFolders.push_back ({ y, trackIndent, track->getColor() });
 
             y += (int)trackH + 10;

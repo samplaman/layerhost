@@ -513,9 +513,7 @@ std::unique_ptr<juce::XmlElement> AudioEngine::saveProjectToXml()
         trackXml->setAttribute ("height", track->getHeight());
         trackXml->setAttribute ("volumeAutomationEnabled", track->getVolumeAutomationEnabled() ? 1 : 0);
         trackXml->setAttribute ("panAutomationEnabled", track->getPanAutomationEnabled() ? 1 : 0);
-        trackXml->setAttribute ("indentLevel", track->getIndentLevel());
-        trackXml->setAttribute ("isFolder", track->getIsFolder() ? 1 : 0);
-        trackXml->setAttribute ("folderCollapsed", track->getFolderCollapsed() ? 1 : 0);
+
 
         // Save Volume Automation Points
         auto* volAutoXml = trackXml->createNewChildElement ("VOLUME_AUTOMATION");
@@ -706,9 +704,7 @@ bool AudioEngine::loadProjectFromXml (const juce::XmlElement& xml)
         track->setHeight (trackXml->getIntAttribute ("height", 80));
         track->setVolumeAutomationEnabled (trackXml->getIntAttribute ("volumeAutomationEnabled", trackXml->getIntAttribute ("automationEnabled", 0)) != 0);
         track->setPanAutomationEnabled (trackXml->getIntAttribute ("panAutomationEnabled", 0) != 0);
-        track->setIndentLevel (trackXml->getIntAttribute ("indentLevel", 0));
-        track->setIsFolder (trackXml->getIntAttribute ("isFolder", 0) != 0);
-        track->setFolderCollapsed (trackXml->getIntAttribute ("folderCollapsed", 0) != 0);
+
 
         // Restore Volume Automation Points
         track->getVolumeAutomation().clear();

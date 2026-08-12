@@ -137,35 +137,7 @@ public:
     /** Returns false if this track is a child of a collapsed folder. */
     bool isTrackVisible (int index) const
     {
-        if (index < 0 || index >= (int)tracks.size()) return true;
-        int myLevel = tracks[index]->getIndentLevel();
-        // Walk backwards to find the nearest folder that wraps us
-        for (int i = index - 1; i >= 0; --i)
-        {
-            auto* t = tracks[i];
-            int lvl = t->getIndentLevel();
-            if (lvl < myLevel)          // This is a parent
-            {
-                if (t->getIsFolder() && t->getFolderCollapsed())
-                    return false;       // Hidden inside a collapsed folder
-                myLevel = lvl;          // Walk up the hierarchy
-            }
-        }
         return true;
-    }
-
-    /** Toggle a folder's collapsed state. */
-    void toggleFolderCollapsed (int index)
-    {
-        if (auto* t = getTrack (index))
-            t->setFolderCollapsed (!t->getFolderCollapsed());
-    }
-
-    /** Promote/demote a track's indent level, clamped 0-8. */
-    void setTrackIndent (int index, int level)
-    {
-        if (auto* t = getTrack (index))
-            t->setIndentLevel (level);
     }
 
     void setOfflineRendering (bool offline, double sampleRate = 44100.0, int blockSize = 512);
