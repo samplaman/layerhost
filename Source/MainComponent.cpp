@@ -793,12 +793,16 @@ MainComponent::MainComponent() : mixerResizer (*this)
     };
     pauseButton.onClick = [this] { 
         audioEngine.setPlaying(false);
+        if (recordButton.getToggleState())
+            recordButton.setToggleState(false, juce::sendNotificationSync);
         arrangementView.updateItems();
         repaint();
     };
     stopButton.onClick = [this] { 
         audioEngine.setPlaying(false);
         audioEngine.setPlayPosition(0.0);
+        if (recordButton.getToggleState())
+            recordButton.setToggleState(false, juce::sendNotificationSync);
         arrangementView.updateItems();
         repaint();
     };
