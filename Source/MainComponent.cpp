@@ -129,14 +129,13 @@ void ItemComponent::mouseDrag (const juce::MouseEvent& e)
     else if (dragMode == DragMode::StretchRight)
     {
         int newWidth = juce::jmax (10, (int)e.getEventRelativeTo(this).position.x);
-        double oldLength = item ? item->getLength() : 0.0;
         double newLength = newWidth / pixelsPerSecond;
-        if (oldLength > 0.001 && item)
+        if (dragStartLength > 0.001 && item)
         {
-            double scale = newLength / oldLength;
+            double scale = newLength / dragStartLength;
             item->setLength (newLength);
-            item->setPlaybackRate (item->getPlaybackRate() / scale);
-            item->setSourceOffset (item->getSourceOffset() * scale);
+            item->setPlaybackRate (dragStartPlaybackRate / scale);
+            // Do not alter sourceOffset when stretching right
             setBounds (getX(), getY(), newWidth, getHeight());
         }
     }
@@ -156,16 +155,15 @@ void ItemComponent::mouseDrag (const juce::MouseEvent& e)
             }
             
             int newWidth = getWidth() - dx;
-            double oldLength = item ? item->getLength() : 0.0;
             double newLength = newWidth / pixelsPerSecond;
             
-            if (oldLength > 0.001 && item)
+            if (dragStartLength > 0.001 && item)
             {
-                double scale = newLength / oldLength;
+                double scale = newLength / dragStartLength;
                 item->setStartTime (newTime);
                 item->setLength (newLength);
-                item->setPlaybackRate (item->getPlaybackRate() / scale);
-                item->setSourceOffset (item->getSourceOffset() * scale);
+                item->setPlaybackRate (dragStartPlaybackRate / scale);
+                // Do not alter sourceOffset when stretching left
                 setBounds (newX, getY(), newWidth, getHeight());
             }
         }
@@ -351,7 +349,7 @@ void ItemComponent::paint (juce::Graphics& g)
                 int startSample = (int)(item->getSourceOffset() * pbRate * 44100.0);
                 int endSample = startSample + (int)(item->getLength() * pbRate * 44100.0);
                 
-                if (startSample >= 0 && endSample <= numSamplesTotal && startSample < endSample && getWidth() > 0)
+                if (startSample >= 0 && startSample < numSamplesTotal && getWidth() > 0)
                 {
                     juce::Path visibleWaveformPath;
                     float step = (endSample - startSample) / (float)getWidth();
@@ -361,6 +359,10 @@ void ItemComponent::paint (juce::Graphics& g)
                     {
                         int sStart = startSample + (int)(i * step);
                         int sEnd = startSample + (int)((i + 1) * step);
+                        
+                        if (sStart >= numSamplesTotal)
+                            break;
+                            
                         sStart = juce::jlimit (0, numSamplesTotal - 1, sStart);
                         sEnd = juce::jlimit (0, numSamplesTotal - 1, sEnd);
                         
@@ -575,6 +577,9 @@ void ItemComponent::mouseDown (const juce::MouseEvent& e)
         dragMode = e.mods.isAltDown() ? DragMode::StretchRight : DragMode::TrimRight;
     else
         dragMode = DragMode::Move;
+        
+    dragStartLength = item ? item->getLength() : 0.0;
+    dragStartPlaybackRate = item ? item->getPlaybackRate() : 1.0;
         
     dragger.startDraggingComponent (this, e); 
 }

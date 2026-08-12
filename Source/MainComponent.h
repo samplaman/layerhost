@@ -189,6 +189,8 @@ private:
     enum class DragMode { Move, TrimLeft, TrimRight, StretchLeft, StretchRight, None };
     DragMode dragMode = DragMode::None;
     bool hasSavedUndoForCurrentDrag = false;
+    double dragStartLength = 0.0;
+    double dragStartPlaybackRate = 1.0;
 };
 
 class VuMeterComponent : public juce::Component
